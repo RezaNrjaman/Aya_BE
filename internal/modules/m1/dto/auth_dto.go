@@ -6,12 +6,13 @@ type LoginRequest struct {
 }
 
 type UserSummary struct {
-	ID          int    `json:"id"`
-	Email       string `json:"email"`
-	Name        string `json:"name"`
-	Role        string `json:"role"`
-	Division    string `json:"division"`
-	UnitUsahaID *int   `json:"unit_usaha_id,omitempty"`
+	ID          int      `json:"id"`
+	Email       string   `json:"email"`
+	Name        string   `json:"name"`
+	Role        string   `json:"role"`
+	Division    string   `json:"division"`
+	UnitUsahaID *int     `json:"unit_usaha_id,omitempty"`
+	Permissions []string `json:"permissions"`
 }
 
 type LoginResponse struct {

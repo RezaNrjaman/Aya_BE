@@ -43,9 +43,9 @@ func SetupFullTestApp() (*gin.Engine, *rbac.PolicyService) {
 	router := platformHttp.NewRouter(platformHttp.RouterDependencies{
 		Config: cfg, RBACRegistry: reg, RBACRepo: repo, PolicyService: policy, AuditService: auditSvc,
 	})
-	m1.InitModule(router, TestJWTSecret, 8, repo, policy, auditSvc)
+	m1Mod := m1.InitModule(router, TestJWTSecret, 8, repo, policy, auditSvc)
 	m2Mod := m2.InitModule(router, TestJWTSecret, policy, auditSvc)
-	m3.InitModule(router, TestJWTSecret, policy, auditSvc)
+	m3.InitModule(router, TestJWTSecret, policy, auditSvc, m1Mod.Provisioner)
 	m4Mod := m4.InitModule(router, TestJWTSecret, policy, auditSvc)
 	m2Cli := m5Client.NewInternalM2Adapter(m2Mod.UnitSvc)
 	m4Cli := m5Client.NewInternalM4Adapter(m4Mod.ProductSvc, m4Mod.OrderSvc)

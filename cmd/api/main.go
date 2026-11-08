@@ -51,9 +51,8 @@ func initRBAC(ctx context.Context, db *database.DB) (*rbac.Registry, rbac.Reposi
 	var repo rbac.Repository = rbac.NewInMemoryRepository()
 	if db != nil {
 		repo = rbac.NewPostgresRepository(db.Pool)
-	} else {
-		_ = rbac.SeedInitialRoles(ctx, repo)
 	}
+	_ = rbac.SeedInitialRoles(ctx, repo)
 	return reg, repo, rbac.NewPolicyService(reg, repo)
 }
 
@@ -77,9 +76,9 @@ func resolveDBRepos(db *database.DB) (m1Repo.UserRepository, m2Repo.UnitReposito
 
 func initModules(r *gin.Engine, cfg *config.Config, rRepo rbac.Repository, pSvc *rbac.PolicyService, aSvc *audit.Service, db *database.DB) {
 	uR, buR, pR, m4R, m5R := resolveDBRepos(db)
-	m1.InitModule(r, cfg.JWTSecret, cfg.JWTExpirationHours, rRepo, pSvc, aSvc, uR)
+	m1Mod := m1.InitModule(r, cfg.JWTSecret, cfg.JWTExpirationHours, rRepo, pSvc, aSvc, uR)
 	m2Mod := m2.InitModule(r, cfg.JWTSecret, pSvc, aSvc, buR)
-	m3.InitModule(r, cfg.JWTSecret, pSvc, aSvc, pR)
+	m3.InitModule(r, cfg.JWTSecret, pSvc, aSvc, m1Mod.Provisioner, pR)
 	m4Mod := m4.InitModule(r, cfg.JWTSecret, pSvc, aSvc, m4R)
 
 	m2Cli := m5Client.NewInternalM2Adapter(m2Mod.UnitSvc)

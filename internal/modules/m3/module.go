@@ -18,27 +18,35 @@ type Module struct {
 	Svc  *service.PartnerService
 }
 
-func resolvePartnerRepo(opts ...repository.PartnerRepository) repository.PartnerRepository {
-	if len(opts) > 0 && opts[0] != nil {
-		return opts[0]
+func parseInitOptions(opts ...any) (service.UserProvisioner, repository.PartnerRepository) {
+	var prov service.UserProvisioner
+	var repo repository.PartnerRepository
+	for _, opt := range opts {
+		if p, ok := opt.(service.UserProvisioner); ok {
+			prov = p
+		} else if r, ok := opt.(repository.PartnerRepository); ok {
+			repo = r
+		}
 	}
-	return repository.NewInMemoryPartnerRepository()
+	if repo == nil {
+		repo = repository.NewInMemoryPartnerRepository()
+	}
+	return prov, repo
 }
 
-func InitModule(r *gin.Engine, secret string, policy *rbac.PolicyService, auditSvc *audit.Service, repoOpt ...repository.PartnerRepository) *Module {
-	repo := resolvePartnerRepo(repoOpt...)
-	svc := service.NewPartnerService(repo, auditSvc)
+func InitModule(r *gin.Engine, secret string, policy *rbac.PolicyService, auditSvc *audit.Service, opts ...any) *Module {
+	prov, repo := parseInitOptions(opts...)
+	svc := service.NewPartnerService(repo, auditSvc, prov)
 	h := handler.NewPartnerHandler(svc)
 
 	RegisterRoutes(r, secret, policy, h)
-	_ = SeedInitialPartners(context.Background(), repo)
+	_ = SeedInitialPartners(context.Background(), repo, prov)
 
 	return &Module{Repo: repo, Svc: svc}
 }
 
-// SeedInitialPartners seeds default verified and pending partners for development.
-func SeedInitialPartners(ctx context.Context, repo repository.PartnerRepository) error {
-	partners := []domain.Partner{
+func defaultSeedPartners() []domain.Partner {
+	return []domain.Partner{
 		{
 			CompanyName: "CV Mitra Grafika Mandiri", ContactPerson: "Budi Santoso",
 			Email: "budi@mitragrafika.com", Phone: "081298765432", Address: "Jl. Industri No. 12",
@@ -55,8 +63,15 @@ func SeedInitialPartners(ctx context.Context, repo repository.PartnerRepository)
 			Status: domain.StatusPending,
 		},
 	}
-	for _, p := range partners {
+}
+
+// SeedInitialPartners seeds default verified and pending partners for development.
+func SeedInitialPartners(ctx context.Context, repo repository.PartnerRepository, prov service.UserProvisioner) error {
+	for _, p := range defaultSeedPartners() {
 		_ = repo.Create(ctx, &p)
+		if p.Status == domain.StatusVerified && prov != nil {
+			_, _ = prov.ProvisionPartner(ctx, p.Email, p.ContactPerson, p.Phone, "Partner123!")
+		}
 	}
 	return nil
 }

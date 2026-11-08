@@ -13,10 +13,11 @@ import (
 )
 
 type Module struct {
-	UserRepo repository.UserRepository
-	AuthSvc  *service.AuthService
-	UserSvc  *service.UserService
-	RoleSvc  *service.RoleService
+	UserRepo    repository.UserRepository
+	AuthSvc     *service.AuthService
+	UserSvc     *service.UserService
+	RoleSvc     *service.RoleService
+	Provisioner *service.PartnerProvisioner
 }
 
 func resolveUserRepo(opts ...repository.UserRepository) repository.UserRepository {
@@ -31,6 +32,7 @@ func InitModule(r *gin.Engine, secret string, exp int, rRepo rbac.Repository, pS
 	authSvc := service.NewAuthService(uRepo, rRepo, aSvc, secret, exp)
 	userSvc := service.NewUserService(uRepo, rRepo, aSvc)
 	roleSvc := service.NewRoleService(rRepo, pSvc, aSvc)
+	prov := service.NewPartnerProvisioner(uRepo)
 
 	h := Handlers{
 		Auth:  handler.NewAuthHandler(authSvc),
@@ -42,7 +44,7 @@ func InitModule(r *gin.Engine, secret string, exp int, rRepo rbac.Repository, pS
 
 	_ = SeedInitialAdmin(context.Background(), uRepo)
 
-	return &Module{UserRepo: uRepo, AuthSvc: authSvc, UserSvc: userSvc, RoleSvc: roleSvc}
+	return &Module{UserRepo: uRepo, AuthSvc: authSvc, UserSvc: userSvc, RoleSvc: roleSvc, Provisioner: prov}
 }
 
 // SeedInitialAdmin seeds the primary administrative account on bootstrap.

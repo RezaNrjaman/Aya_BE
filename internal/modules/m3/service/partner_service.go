@@ -12,13 +12,23 @@ import (
 	"araya-business-hub/be/internal/platform/audit"
 )
 
-type PartnerService struct {
-	repo     repository.PartnerRepository
-	auditSvc *audit.Service
+type UserProvisioner interface {
+	ProvisionPartner(ctx context.Context, email, name, phone, password string) (int, error)
+	SetUserStatus(ctx context.Context, email string, isActive bool) error
 }
 
-func NewPartnerService(repo repository.PartnerRepository, auditSvc *audit.Service) *PartnerService {
-	return &PartnerService{repo: repo, auditSvc: auditSvc}
+type PartnerService struct {
+	repo        repository.PartnerRepository
+	auditSvc    *audit.Service
+	provisioner UserProvisioner
+}
+
+func NewPartnerService(repo repository.PartnerRepository, auditSvc *audit.Service, prov ...UserProvisioner) *PartnerService {
+	var p UserProvisioner
+	if len(prov) > 0 {
+		p = prov[0]
+	}
+	return &PartnerService{repo: repo, auditSvc: auditSvc, provisioner: p}
 }
 
 func (s *PartnerService) Register(ctx context.Context, req dto.RegisterPartnerRequest, actor string) (*domain.Partner, error) {
@@ -89,6 +99,11 @@ func (s *PartnerService) VerifyPartner(ctx context.Context, id int, req dto.Veri
 	if err != nil {
 		return nil, err
 	}
+	if req.Action == "approve" && s.provisioner != nil {
+		if uid, err := s.provisioner.ProvisionPartner(ctx, p.Email, p.ContactPerson, p.Phone, "Partner123!"); err == nil && uid > 0 {
+			p.UserID = &uid
+		}
+	}
 	if err := s.repo.Update(ctx, p); err != nil {
 		return nil, err
 	}
@@ -110,6 +125,9 @@ func (s *PartnerService) SuspendPartner(ctx context.Context, id int, reason, act
 	if err := p.Suspend(reason); err != nil {
 		return nil, err
 	}
+	if s.provisioner != nil {
+		_ = s.provisioner.SetUserStatus(ctx, p.Email, false)
+	}
 	if err := s.repo.Update(ctx, p); err != nil {
 		return nil, err
 	}
@@ -130,6 +148,9 @@ func (s *PartnerService) ReactivatePartner(ctx context.Context, id int, actor st
 	fromStatus := p.Status
 	if err := p.Reactivate(); err != nil {
 		return nil, err
+	}
+	if s.provisioner != nil {
+		_ = s.provisioner.SetUserStatus(ctx, p.Email, true)
 	}
 	if err := s.repo.Update(ctx, p); err != nil {
 		return nil, err

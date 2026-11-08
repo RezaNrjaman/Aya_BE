@@ -62,10 +62,11 @@ func (p *PostgresPartnerRepository) scanPartner(row pgx.Row) (*domain.Partner, e
 
 func (p *PostgresPartnerRepository) Update(ctx context.Context, part *domain.Partner) error {
 	q := `UPDATE partners SET company_name = $1, contact_person = $2, phone = $3, address = $4,
-	             status = $5, rejection_reason = $6, suspension_reason = $7, verified_at = $8, updated_at = NOW()
-	      WHERE id = $9`
+	             status = $5, rejection_reason = $6, suspension_reason = $7, verified_at = $8,
+	             user_id = $9, updated_at = NOW()
+	      WHERE id = $10`
 	ct, err := p.pool.Exec(ctx, q, part.CompanyName, part.ContactPerson, part.Phone, part.Address,
-		part.Status, part.RejectionReason, part.SuspensionReason, part.VerifiedAt, part.ID)
+		part.Status, part.RejectionReason, part.SuspensionReason, part.VerifiedAt, part.UserID, part.ID)
 	if err != nil {
 		return err
 	}

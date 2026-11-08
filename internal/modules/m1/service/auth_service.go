@@ -71,13 +71,17 @@ func (s *AuthService) Login(ctx context.Context, req dto.LoginRequest) (*dto.Log
 	if err != nil {
 		return nil, err
 	}
+	perms, _ := s.rbacRepo.GetRolePermissions(ctx, user.Role)
+	if perms == nil {
+		perms = []string{}
+	}
 	_ = s.auditSvc.Log(ctx, audit.Record{
 		UserID: &user.ID, UserName: user.Name, Action: "user.login", EntityType: "user", EntityID: user.Email,
 	})
 	return &dto.LoginResponse{
 		Token: token,
 		User: dto.UserSummary{
-			ID: user.ID, Email: user.Email, Name: user.Name, Role: user.Role, Division: user.DivisionName, UnitUsahaID: user.UnitUsahaID,
+			ID: user.ID, Email: user.Email, Name: user.Name, Role: user.Role, Division: user.DivisionName, UnitUsahaID: user.UnitUsahaID, Permissions: perms,
 		},
 	}, nil
 }

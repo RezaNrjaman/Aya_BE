@@ -92,6 +92,7 @@ func SeedInitialRoles(ctx context.Context, repo Repository) error {
 				IsActive:    true,
 			},
 			Perms: []string{
+				"m2.dashboard.read",
 				"m3.partners.read", "m3.partners.register",
 				"m4.products.read", "m4.products.manage", "m4.customers.manage",
 				"m4.quotations.manage", "m4.invoices.manage", "m4.orders.manage",

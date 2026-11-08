@@ -26,7 +26,16 @@ func (p *PostgresUserRepository) Create(ctx context.Context, u *domain.User) err
 	if err != nil && strings.Contains(err.Error(), "duplicate key") {
 		return domain.ErrDuplicateEmail
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	if u.Role != "" {
+		assignQ := `INSERT INTO user_role_assignments (user_id, role_id, unit_usaha_id, created_at)
+			SELECT $1, r.id, $2, NOW() FROM roles r WHERE r.name = $3
+			ON CONFLICT (user_id, role_id, unit_usaha_id) DO NOTHING`
+		_, _ = p.pool.Exec(ctx, assignQ, u.ID, u.UnitUsahaID, u.Role)
+	}
+	return nil
 }
 
 func (p *PostgresUserRepository) GetByID(ctx context.Context, id int) (*domain.User, error) {
@@ -65,14 +74,17 @@ func (p *PostgresUserRepository) scanUser(row pgx.Row) (*domain.User, error) {
 }
 
 func (p *PostgresUserRepository) Update(ctx context.Context, u *domain.User) error {
-	q := `UPDATE users SET name = $1, phone = $2, division_id = $3, is_active = $4, updated_at = NOW()
-	      WHERE id = $5`
+	q := `UPDATE users SET name = $1, phone = $2, division_id = $3, is_active = $4, updated_at = NOW() WHERE id = $5`
 	ct, err := p.pool.Exec(ctx, q, u.Name, u.Phone, u.DivisionID, u.IsActive, u.ID)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
+	if err != nil || ct.RowsAffected() == 0 {
 		return domain.ErrUserNotFound
+	}
+	if u.Role != "" {
+		_, _ = p.pool.Exec(ctx, `DELETE FROM user_role_assignments WHERE user_id = $1`, u.ID)
+		assignQ := `INSERT INTO user_role_assignments (user_id, role_id, unit_usaha_id, created_at)
+			SELECT $1, r.id, $2, NOW() FROM roles r WHERE r.name = $3
+			ON CONFLICT (user_id, role_id, unit_usaha_id) DO NOTHING`
+		_, _ = p.pool.Exec(ctx, assignQ, u.ID, u.UnitUsahaID, u.Role)
 	}
 	return nil
 }
