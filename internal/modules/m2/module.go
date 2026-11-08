@@ -18,8 +18,15 @@ type Module struct {
 	DashboardSvc *service.DashboardService
 }
 
-func InitModule(r *gin.Engine, secret string, policy *rbac.PolicyService, auditSvc *audit.Service) *Module {
-	repo := repository.NewInMemoryUnitRepository()
+func resolveUnitRepo(opts ...repository.UnitRepository) repository.UnitRepository {
+	if len(opts) > 0 && opts[0] != nil {
+		return opts[0]
+	}
+	return repository.NewInMemoryUnitRepository()
+}
+
+func InitModule(r *gin.Engine, secret string, policy *rbac.PolicyService, auditSvc *audit.Service, repoOpt ...repository.UnitRepository) *Module {
+	repo := resolveUnitRepo(repoOpt...)
 	unitSvc := service.NewUnitService(repo, auditSvc)
 	dashSvc := service.NewDashboardService(repo)
 

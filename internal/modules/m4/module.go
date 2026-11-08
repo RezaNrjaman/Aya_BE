@@ -14,13 +14,20 @@ import (
 )
 
 type Module struct {
-	Repo       *repository.InMemoryRepository
+	Repo       repository.Repository
 	ProductSvc *service.ProductService
 	OrderSvc   *service.OrderService
 }
 
-func InitModule(r *gin.Engine, secret string, policy *rbac.PolicyService, auditSvc *audit.Service) *Module {
-	repo := repository.NewInMemoryRepository()
+func resolveM4Repo(opts ...repository.Repository) repository.Repository {
+	if len(opts) > 0 && opts[0] != nil {
+		return opts[0]
+	}
+	return repository.NewInMemoryRepository()
+}
+
+func InitModule(r *gin.Engine, secret string, policy *rbac.PolicyService, auditSvc *audit.Service, repoOpt ...repository.Repository) *Module {
+	repo := resolveM4Repo(repoOpt...)
 	adapter := payment.NewSandboxAdapter("")
 	prodSvc := service.NewProductService(repo, auditSvc)
 	custSvc := service.NewCustomerService(repo)

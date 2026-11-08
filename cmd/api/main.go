@@ -11,17 +11,23 @@ import (
 	"time"
 
 	"araya-business-hub/be/internal/modules/m1"
+	m1Repo "araya-business-hub/be/internal/modules/m1/repository"
 	"araya-business-hub/be/internal/modules/m2"
+	m2Repo "araya-business-hub/be/internal/modules/m2/repository"
 	"araya-business-hub/be/internal/modules/m3"
+	m3Repo "araya-business-hub/be/internal/modules/m3/repository"
 	"araya-business-hub/be/internal/modules/m4"
+	m4Repo "araya-business-hub/be/internal/modules/m4/repository"
 	"araya-business-hub/be/internal/modules/m5"
 	m5Client "araya-business-hub/be/internal/modules/m5/client"
+	m5Repo "araya-business-hub/be/internal/modules/m5/repository"
 	"araya-business-hub/be/internal/platform/audit"
 	"araya-business-hub/be/internal/platform/config"
 	"araya-business-hub/be/internal/platform/database"
 	platformHttp "araya-business-hub/be/internal/platform/http"
 	"araya-business-hub/be/internal/platform/logging"
 	"araya-business-hub/be/internal/platform/rbac"
+	"github.com/gin-gonic/gin"
 )
 
 func initDB(ctx context.Context, cfg *config.Config) *database.DB {
@@ -39,12 +45,46 @@ func initDB(ctx context.Context, cfg *config.Config) *database.DB {
 	return db
 }
 
-func initRBAC(ctx context.Context) (*rbac.Registry, rbac.Repository, *rbac.PolicyService) {
+func initRBAC(ctx context.Context, db *database.DB) (*rbac.Registry, rbac.Repository, *rbac.PolicyService) {
 	reg := rbac.NewRegistry()
 	_ = rbac.SeedPlatformPermissions(reg)
-	repo := rbac.NewInMemoryRepository()
-	_ = rbac.SeedInitialRoles(ctx, repo)
+	var repo rbac.Repository = rbac.NewInMemoryRepository()
+	if db != nil {
+		repo = rbac.NewPostgresRepository(db.Pool)
+	} else {
+		_ = rbac.SeedInitialRoles(ctx, repo)
+	}
 	return reg, repo, rbac.NewPolicyService(reg, repo)
+}
+
+func initAudit(db *database.DB) *audit.Service {
+	if db != nil {
+		return audit.NewService(audit.NewPostgresRepository(db.Pool))
+	}
+	return audit.NewService(audit.NewInMemoryRepository())
+}
+
+func resolveDBRepos(db *database.DB) (m1Repo.UserRepository, m2Repo.UnitRepository, m3Repo.PartnerRepository, m4Repo.Repository, m5Repo.Repository) {
+	if db == nil {
+		return nil, nil, nil, nil, nil
+	}
+	return m1Repo.NewPostgresUserRepository(db.Pool),
+		m2Repo.NewPostgresUnitRepository(db.Pool),
+		m3Repo.NewPostgresPartnerRepository(db.Pool),
+		m4Repo.NewPostgresRepository(db.Pool),
+		m5Repo.NewPostgresRepository(db.Pool)
+}
+
+func initModules(r *gin.Engine, cfg *config.Config, rRepo rbac.Repository, pSvc *rbac.PolicyService, aSvc *audit.Service, db *database.DB) {
+	uR, buR, pR, m4R, m5R := resolveDBRepos(db)
+	m1.InitModule(r, cfg.JWTSecret, cfg.JWTExpirationHours, rRepo, pSvc, aSvc, uR)
+	m2Mod := m2.InitModule(r, cfg.JWTSecret, pSvc, aSvc, buR)
+	m3.InitModule(r, cfg.JWTSecret, pSvc, aSvc, pR)
+	m4Mod := m4.InitModule(r, cfg.JWTSecret, pSvc, aSvc, m4R)
+
+	m2Cli := m5Client.NewInternalM2Adapter(m2Mod.UnitSvc)
+	m4Cli := m5Client.NewInternalM4Adapter(m4Mod.ProductSvc, m4Mod.OrderSvc)
+	m5.InitModule(r, cfg.JWTSecret, pSvc, aSvc, m2Cli, m4Cli, m5R)
 }
 
 func startServer(srv *http.Server) {
@@ -77,19 +117,12 @@ func main() {
 	db := initDB(ctx, cfg)
 	defer db.Close()
 
-	reg, rbacRepo, policySvc := initRBAC(ctx)
-	auditSvc := audit.NewService(audit.NewInMemoryRepository())
+	reg, rbacRepo, policySvc := initRBAC(ctx, db)
+	auditSvc := initAudit(db)
 	router := platformHttp.NewRouter(platformHttp.RouterDependencies{
 		Config: cfg, DB: db, RBACRegistry: reg, RBACRepo: rbacRepo, PolicyService: policySvc, AuditService: auditSvc,
 	})
-	m1.InitModule(router, cfg.JWTSecret, cfg.JWTExpirationHours, rbacRepo, policySvc, auditSvc)
-	m2Mod := m2.InitModule(router, cfg.JWTSecret, policySvc, auditSvc)
-	m3.InitModule(router, cfg.JWTSecret, policySvc, auditSvc)
-	m4Mod := m4.InitModule(router, cfg.JWTSecret, policySvc, auditSvc)
-
-	m2Cli := m5Client.NewInternalM2Adapter(m2Mod.UnitSvc)
-	m4Cli := m5Client.NewInternalM4Adapter(m4Mod.ProductSvc, m4Mod.OrderSvc)
-	m5.InitModule(router, cfg.JWTSecret, policySvc, auditSvc, m2Cli, m4Cli)
+	initModules(router, cfg, rbacRepo, policySvc, auditSvc, db)
 
 	srv := &http.Server{Addr: fmt.Sprintf(":%s", cfg.Port), Handler: router}
 	startServer(srv)

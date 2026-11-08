@@ -13,12 +13,19 @@ import (
 )
 
 type Module struct {
-	Repo *repository.InMemoryPartnerRepository
+	Repo repository.PartnerRepository
 	Svc  *service.PartnerService
 }
 
-func InitModule(r *gin.Engine, secret string, policy *rbac.PolicyService, auditSvc *audit.Service) *Module {
-	repo := repository.NewInMemoryPartnerRepository()
+func resolvePartnerRepo(opts ...repository.PartnerRepository) repository.PartnerRepository {
+	if len(opts) > 0 && opts[0] != nil {
+		return opts[0]
+	}
+	return repository.NewInMemoryPartnerRepository()
+}
+
+func InitModule(r *gin.Engine, secret string, policy *rbac.PolicyService, auditSvc *audit.Service, repoOpt ...repository.PartnerRepository) *Module {
+	repo := resolvePartnerRepo(repoOpt...)
 	svc := service.NewPartnerService(repo, auditSvc)
 	h := handler.NewPartnerHandler(svc)
 

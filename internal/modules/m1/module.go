@@ -19,8 +19,15 @@ type Module struct {
 	RoleSvc  *service.RoleService
 }
 
-func InitModule(r *gin.Engine, secret string, exp int, rRepo rbac.Repository, pSvc *rbac.PolicyService, aSvc *audit.Service) *Module {
-	uRepo := repository.NewInMemoryUserRepository()
+func resolveUserRepo(opts ...repository.UserRepository) repository.UserRepository {
+	if len(opts) > 0 && opts[0] != nil {
+		return opts[0]
+	}
+	return repository.NewInMemoryUserRepository()
+}
+
+func InitModule(r *gin.Engine, secret string, exp int, rRepo rbac.Repository, pSvc *rbac.PolicyService, aSvc *audit.Service, uRepoOpt ...repository.UserRepository) *Module {
+	uRepo := resolveUserRepo(uRepoOpt...)
 	authSvc := service.NewAuthService(uRepo, rRepo, aSvc, secret, exp)
 	userSvc := service.NewUserService(uRepo, rRepo, aSvc)
 	roleSvc := service.NewRoleService(rRepo, aSvc)

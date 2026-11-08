@@ -1,11 +1,18 @@
 package domain
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 const (
 	PaymentPending = "pending"
 	PaymentSuccess = "success"
 	PaymentFailed  = "failed"
+)
+
+var (
+	ErrPaymentNotFound = errors.New("pembayaran tidak ditemukan")
 )
 
 type Payment struct {

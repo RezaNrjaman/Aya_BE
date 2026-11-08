@@ -31,8 +31,15 @@ func buildHandlers(repo repository.Repository, m2 client.M2Client, m4 client.M4C
 	}
 }
 
-func InitModule(r *gin.Engine, secret string, policy *rbac.PolicyService, auditSvc *audit.Service, m2 client.M2Client, m4 client.M4Client) *Module {
-	repo := repository.NewInMemoryRepository()
+func resolveM5Repo(opts ...repository.Repository) repository.Repository {
+	if len(opts) > 0 && opts[0] != nil {
+		return opts[0]
+	}
+	return repository.NewInMemoryRepository()
+}
+
+func InitModule(r *gin.Engine, secret string, policy *rbac.PolicyService, auditSvc *audit.Service, m2 client.M2Client, m4 client.M4Client, repoOpt ...repository.Repository) *Module {
+	repo := resolveM5Repo(repoOpt...)
 	h := buildHandlers(repo, m2, m4, auditSvc)
 
 	RegisterRoutes(r, secret, policy, h)

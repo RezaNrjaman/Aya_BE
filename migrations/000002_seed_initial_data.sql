@@ -179,3 +179,4 @@ SELECT
 FROM business_units bu
 WHERE bu.name = 'Araya Solusi Teknologi'
 ON CONFLICT DO NOTHING;
+
