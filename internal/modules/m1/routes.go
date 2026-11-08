@@ -35,10 +35,12 @@ func registerRoleRoutes(rg *gin.RouterGroup, policy *rbac.PolicyService, h *hand
 func RegisterRoutes(r *gin.Engine, jwtSecret string, policy *rbac.PolicyService, h Handlers) {
 	m1 := r.Group("/api/m1/v1")
 	m1.POST("/login", h.Auth.Login)
+	m1.POST("/auth/login", h.Auth.Login)
 
 	protected := m1.Group("")
 	protected.Use(middleware.Authenticate(jwtSecret))
 	protected.GET("/me", h.Auth.GetProfile)
+	protected.GET("/auth/me", h.Auth.GetProfile)
 	protected.PATCH("/password", h.Auth.ChangePassword)
 
 	registerUserRoutes(protected.Group("/users"), policy, h.User)
