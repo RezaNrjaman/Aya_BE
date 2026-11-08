@@ -10,4 +10,3 @@ type CreateOrderRequest struct {
 	IdempotencyKey string           `json:"idempotency_key,omitempty"`
 	Items          []OrderItemInput `json:"items" binding:"required"`
 }
-

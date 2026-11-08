@@ -11,4 +11,3 @@ type StatusHistory struct {
 	ChangedBy  string    `json:"changed_by,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 }
-

@@ -13,4 +13,3 @@ type UpdateCustomerRequest struct {
 	Phone   *string `json:"phone,omitempty"`
 	Address *string `json:"address,omitempty"`
 }
-

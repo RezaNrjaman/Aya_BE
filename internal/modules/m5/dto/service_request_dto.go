@@ -12,4 +12,3 @@ type CreateServiceRequest struct {
 type UpdateServiceRequestStatus struct {
 	Status string `json:"status" binding:"required"` // diproses, selesai
 }
-

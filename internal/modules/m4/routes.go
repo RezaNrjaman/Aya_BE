@@ -63,4 +63,3 @@ func RegisterRoutes(r *gin.Engine, jwtSecret string, policy *rbac.PolicyService,
 	registerDocRoutes(protected, policy, h)
 	registerOrderAdminRoutes(protected, policy, h)
 }
-

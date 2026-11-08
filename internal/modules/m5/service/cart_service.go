@@ -86,4 +86,3 @@ func (s *CartService) ClearCart(ctx context.Context, sessionID string) error {
 	c.Clear()
 	return s.repo.SaveCart(ctx, c)
 }
-

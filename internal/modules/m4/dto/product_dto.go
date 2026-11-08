@@ -20,4 +20,3 @@ type UpdateProductRequest struct {
 	IsActive    *bool   `json:"is_active,omitempty"`
 	ImageURL    *string `json:"image_url,omitempty"`
 }
-

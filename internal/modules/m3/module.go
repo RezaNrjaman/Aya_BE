@@ -9,6 +9,7 @@ import (
 	"araya-business-hub/be/internal/modules/m3/service"
 	"araya-business-hub/be/internal/platform/audit"
 	"araya-business-hub/be/internal/platform/rbac"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -59,4 +60,3 @@ func SeedInitialPartners(ctx context.Context, repo repository.PartnerRepository)
 	}
 	return nil
 }
-

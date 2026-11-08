@@ -99,4 +99,3 @@ func (s *QuotationService) RejectQuotation(ctx context.Context, id int, actor st
 func (s *QuotationService) ListQuotations(ctx context.Context, status string, limit, offset int) ([]domain.Quotation, int, error) {
 	return s.repo.ListQuotations(ctx, status, limit, offset)
 }
-

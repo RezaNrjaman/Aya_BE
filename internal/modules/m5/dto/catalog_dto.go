@@ -23,4 +23,3 @@ type ProductSummary struct {
 	Stock       int    `json:"stock"`
 	IsActive    bool   `json:"is_active"`
 }
-

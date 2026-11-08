@@ -146,4 +146,3 @@ func (h *PartnerHandler) Reactivate(c *gin.Context) {
 	}
 	response.OK(c, partner)
 }
-

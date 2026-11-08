@@ -146,4 +146,3 @@ func (r *InMemoryPartnerRepository) GetHistories(ctx context.Context, partnerID 
 	}
 	return res, nil
 }
-

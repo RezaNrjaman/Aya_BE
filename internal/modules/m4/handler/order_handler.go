@@ -110,4 +110,3 @@ func (h *OrderHandler) CancelOrder(c *gin.Context) {
 	}
 	response.OK(c, order)
 }
-

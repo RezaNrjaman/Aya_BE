@@ -60,4 +60,3 @@ func SeedInitialData(ctx context.Context, repo repository.Repository) error {
 	}
 	return repo.CreateServiceRequest(ctx, &sample)
 }
-

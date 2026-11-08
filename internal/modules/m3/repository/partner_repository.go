@@ -16,4 +16,3 @@ type PartnerRepository interface {
 	AddHistory(ctx context.Context, h *domain.StatusHistory) error
 	GetHistories(ctx context.Context, partnerID int) ([]domain.StatusHistory, error)
 }
-

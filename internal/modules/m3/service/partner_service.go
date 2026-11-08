@@ -142,4 +142,3 @@ func (s *PartnerService) ReactivatePartner(ctx context.Context, id int, actor st
 	})
 	return p, nil
 }
-

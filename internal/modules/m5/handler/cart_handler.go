@@ -83,4 +83,3 @@ func (h *CartHandler) ClearCart(c *gin.Context) {
 	}
 	response.OK(c, map[string]string{"message": "Keranjang belanja berhasil dikosongkan"})
 }
-

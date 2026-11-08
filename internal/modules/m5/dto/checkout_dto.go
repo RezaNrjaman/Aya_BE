@@ -14,4 +14,3 @@ type CheckoutResponse struct {
 	CartCleared    bool   `json:"cart_cleared"`
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
 }
-

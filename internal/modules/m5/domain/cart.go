@@ -98,4 +98,3 @@ func (c *Cart) TotalQuantity() int {
 	}
 	return count
 }
-

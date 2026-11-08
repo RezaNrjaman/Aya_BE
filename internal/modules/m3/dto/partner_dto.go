@@ -23,4 +23,3 @@ type PartnerDetailResponse struct {
 	Partner   domain.Partner         `json:"partner"`
 	Histories []domain.StatusHistory `json:"histories"`
 }
-

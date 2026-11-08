@@ -86,4 +86,3 @@ func (h *QuotationHandler) ListQuotations(c *gin.Context) {
 	}
 	response.List(c, list, p.Page, p.PerPage, total)
 }
-

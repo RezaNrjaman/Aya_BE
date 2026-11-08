@@ -12,10 +12,9 @@ type UpdateCartItemRequest struct {
 }
 
 type CartResponse struct {
-	ID            int               `json:"id"`
-	SessionID     string            `json:"session_id"`
-	TotalItems    int               `json:"total_items"`
-	TotalAmount   int64             `json:"total_amount"`
-	Items         []domain.CartItem `json:"items"`
+	ID          int               `json:"id"`
+	SessionID   string            `json:"session_id"`
+	TotalItems  int               `json:"total_items"`
+	TotalAmount int64             `json:"total_amount"`
+	Items       []domain.CartItem `json:"items"`
 }
-

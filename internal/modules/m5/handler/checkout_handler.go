@@ -29,4 +29,3 @@ func (h *CheckoutHandler) Checkout(c *gin.Context) {
 	}
 	response.Created(c, resp)
 }
-

@@ -1,7 +1,7 @@
 package dto
 
 type DashboardMetrics struct {
-	TotalRevenue         int64 `json:"total_revenue"`          // In Rupiah integer
+	TotalRevenue         int64 `json:"total_revenue"` // In Rupiah integer
 	TotalOrders          int   `json:"total_orders"`
 	ActivePartners       int   `json:"active_partners"`
 	ActiveProducts       int   `json:"active_products"`

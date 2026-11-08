@@ -60,4 +60,3 @@ func (r *ServiceRequest) Complete() error {
 	r.UpdatedAt = time.Now().UTC()
 	return nil
 }
-

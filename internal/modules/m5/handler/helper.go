@@ -36,4 +36,3 @@ func getActor(c *gin.Context) string {
 	}
 	return "anonymous"
 }
-

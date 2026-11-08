@@ -7,11 +7,11 @@ import (
 )
 
 var (
-	ErrUserInactive     = errors.New("akun dinonaktifkan, silakan hubungi administrator")
-	ErrInvalidEmail     = errors.New("format email tidak valid")
-	ErrNameRequired     = errors.New("nama wajib diisi")
-	ErrUserNotFound     = errors.New("pengguna tidak ditemukan")
-	ErrDuplicateEmail   = errors.New("email sudah terdaftar di sistem")
+	ErrUserInactive   = errors.New("akun dinonaktifkan, silakan hubungi administrator")
+	ErrInvalidEmail   = errors.New("format email tidak valid")
+	ErrNameRequired   = errors.New("nama wajib diisi")
+	ErrUserNotFound   = errors.New("pengguna tidak ditemukan")
+	ErrDuplicateEmail = errors.New("email sudah terdaftar di sistem")
 )
 
 type User struct {

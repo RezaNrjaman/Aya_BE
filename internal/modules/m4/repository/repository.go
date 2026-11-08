@@ -45,4 +45,3 @@ type Repository interface {
 	AddOrderHistory(ctx context.Context, h *domain.OrderStatusHistory) error
 	GetOrderHistories(ctx context.Context, orderID int) ([]domain.OrderStatusHistory, error)
 }
-

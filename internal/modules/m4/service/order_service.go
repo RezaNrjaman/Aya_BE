@@ -143,4 +143,3 @@ func (s *OrderService) CancelOrder(ctx context.Context, id int, reason string, a
 	})
 	return o, nil
 }
-

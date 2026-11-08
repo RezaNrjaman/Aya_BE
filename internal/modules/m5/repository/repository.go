@@ -18,4 +18,3 @@ type Repository interface {
 	GetCartBySession(ctx context.Context, sessionID string) (*domain.Cart, error)
 	SaveCart(ctx context.Context, cart *domain.Cart) error
 }
-

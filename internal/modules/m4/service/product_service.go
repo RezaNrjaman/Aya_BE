@@ -91,4 +91,3 @@ func (s *ProductService) ListProducts(ctx context.Context, unitID *int, cat, sea
 func (s *ProductService) ListActiveProducts(ctx context.Context, unitID *int, cat, search string, limit, offset int) ([]domain.Product, int, error) {
 	return s.repo.ListProducts(ctx, unitID, cat, search, true, limit, offset)
 }
-

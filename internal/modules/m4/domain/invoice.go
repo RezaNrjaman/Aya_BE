@@ -45,4 +45,3 @@ func (inv *Invoice) MarkAsPaid(paidAt time.Time) {
 	inv.PaidAt = &paidAt
 	inv.UpdatedAt = paidAt
 }
-

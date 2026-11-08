@@ -33,4 +33,3 @@ func (c *Customer) Validate() error {
 	}
 	return nil
 }
-

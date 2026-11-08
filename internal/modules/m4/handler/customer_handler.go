@@ -57,4 +57,3 @@ func (h *CustomerHandler) ListCustomers(c *gin.Context) {
 	}
 	response.List(c, customers, p.Page, p.PerPage, total)
 }
-

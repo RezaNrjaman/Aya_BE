@@ -89,4 +89,3 @@ func (h *ServiceRequestHandler) UpdateRequestStatus(c *gin.Context) {
 	}
 	response.OK(c, sr)
 }
-

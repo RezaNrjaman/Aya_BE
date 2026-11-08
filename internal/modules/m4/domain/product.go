@@ -50,4 +50,3 @@ func (p *Product) SetActive(active bool) {
 	p.IsActive = active
 	p.UpdatedAt = time.Now().UTC()
 }
-

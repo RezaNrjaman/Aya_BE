@@ -57,4 +57,3 @@ func (h *CatalogHandler) GetCatalog(c *gin.Context) {
 	}
 	response.OK(c, cat)
 }
-

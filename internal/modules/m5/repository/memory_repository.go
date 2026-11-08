@@ -10,11 +10,11 @@ import (
 )
 
 type InMemoryRepository struct {
-	mu          sync.RWMutex
-	requests    map[int]domain.ServiceRequest
-	carts       map[string]domain.Cart
-	nextReqID   int
-	nextCartID  int
+	mu         sync.RWMutex
+	requests   map[int]domain.ServiceRequest
+	carts      map[string]domain.Cart
+	nextReqID  int
+	nextCartID int
 }
 
 func NewInMemoryRepository() *InMemoryRepository {
@@ -122,4 +122,3 @@ func (r *InMemoryRepository) SaveCart(ctx context.Context, cart *domain.Cart) er
 	r.carts[cart.SessionID] = *cart
 	return nil
 }
-

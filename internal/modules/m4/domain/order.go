@@ -85,4 +85,3 @@ func (o *Order) Cancel() error {
 	o.UpdatedAt = time.Now().UTC()
 	return nil
 }
-

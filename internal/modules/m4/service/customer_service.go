@@ -36,4 +36,3 @@ func (s *CustomerService) GetCustomer(ctx context.Context, id int) (*domain.Cust
 func (s *CustomerService) ListCustomers(ctx context.Context, search string, limit, offset int) ([]domain.Customer, int, error) {
 	return s.repo.ListCustomers(ctx, search, limit, offset)
 }
-

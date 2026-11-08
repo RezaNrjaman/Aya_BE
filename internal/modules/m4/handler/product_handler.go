@@ -130,4 +130,3 @@ func (h *ProductHandler) ListActiveProducts(c *gin.Context) {
 	}
 	response.List(c, products, p.Page, p.PerPage, total)
 }
-

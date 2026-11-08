@@ -38,4 +38,3 @@ func (s *CatalogService) GetCatalog(ctx context.Context, f dto.CatalogFilter) (m
 		"products":       products,
 	}, nil
 }
-

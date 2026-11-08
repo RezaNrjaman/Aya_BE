@@ -59,4 +59,3 @@ func (q *Quotation) Reject() error {
 	q.UpdatedAt = time.Now().UTC()
 	return nil
 }
-

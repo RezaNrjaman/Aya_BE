@@ -46,4 +46,3 @@ func RegisterRoutes(r *gin.Engine, jwtSecret string, policy *rbac.PolicyService,
 	protected.Use(middleware.Authenticate(jwtSecret))
 	registerProtectedAdminRoutes(protected, policy, h)
 }
-

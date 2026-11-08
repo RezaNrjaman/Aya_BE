@@ -13,4 +13,3 @@ type CreateQuotationRequest struct {
 	CustomerID  int                  `json:"customer_id" binding:"required"`
 	Items       []QuotationItemInput `json:"items" binding:"required"`
 }
-

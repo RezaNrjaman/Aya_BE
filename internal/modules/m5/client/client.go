@@ -16,4 +16,3 @@ type M4Client interface {
 	GetProductByID(ctx context.Context, id int) (*dto.ProductSummary, error)
 	CreateOrderFromCart(ctx context.Context, req dto.CheckoutRequest, items []domain.CartItem) (*dto.CheckoutResponse, error)
 }
-

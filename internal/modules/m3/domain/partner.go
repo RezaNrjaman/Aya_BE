@@ -112,4 +112,3 @@ func (p *Partner) Reactivate() error {
 	p.UpdatedAt = time.Now().UTC()
 	return nil
 }
-
