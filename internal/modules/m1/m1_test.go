@@ -129,7 +129,6 @@ func TestM1_ChangePasswordFlow(t *testing.T) {
 	router, _ := setupTestApp()
 	token := loginAdmin(router)
 
-	// 1. Wrong old password fails
 	wBad := doReq(router, http.MethodPatch, "/api/m1/v1/password", token, dto.ChangePasswordRequest{
 		OldPassword: "WrongOldPassword", NewPassword: "NewSecretPassword123!",
 	})
@@ -137,7 +136,6 @@ func TestM1_ChangePasswordFlow(t *testing.T) {
 		t.Fatalf("expected 422 for wrong old password, got %d", wBad.Code)
 	}
 
-	// 2. Correct old password succeeds
 	wOk := doReq(router, http.MethodPatch, "/api/m1/v1/password", token, dto.ChangePasswordRequest{
 		OldPassword: "Admin1234!", NewPassword: "NewSecretPassword123!",
 	})
@@ -145,7 +143,6 @@ func TestM1_ChangePasswordFlow(t *testing.T) {
 		t.Fatalf("expected 200 for successful password change, got %d", wOk.Code)
 	}
 
-	// 3. New password works on next login
 	wLogin := doReq(router, http.MethodPost, "/api/m1/v1/login", "", dto.LoginRequest{
 		Email: "admin@araya.com", Password: "NewSecretPassword123!",
 	})

@@ -68,3 +68,11 @@ func (p *PolicyService) IsScopePermitted(userRole string, userUnitUsahaID *int, 
 
 	return *userUnitUsahaID == targetUnitUsahaID
 }
+
+// ListPermissions returns all registered permissions in the platform.
+func (p *PolicyService) ListPermissions() []Permission {
+	if p.registry == nil {
+		return []Permission{}
+	}
+	return p.registry.List()
+}

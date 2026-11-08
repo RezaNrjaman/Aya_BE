@@ -61,8 +61,8 @@ func (p *PostgresRepository) loadQuotationItems(ctx context.Context, qID int) ([
 }
 
 func (p *PostgresRepository) UpdateQuotation(ctx context.Context, q *domain.Quotation) error {
-	sql := `UPDATE quotations SET status = $1, updated_at = NOW() WHERE id = $2`
-	ct, err := p.pool.Exec(ctx, sql, q.Status, q.ID)
+	sql := `UPDATE quotations SET quotation_no = $1, status = $2, updated_at = NOW() WHERE id = $3`
+	ct, err := p.pool.Exec(ctx, sql, q.QuotationNo, q.Status, q.ID)
 	if err != nil {
 		return err
 	}

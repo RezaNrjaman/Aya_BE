@@ -75,6 +75,7 @@ func (s *InvoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 		return nil, err
 	}
 	inv := &domain.Invoice{
+		InvoiceNo: formatInvoiceNo(int(time.Now().UnixNano() % 10000)),
 		QuotationID: req.QuotationID, CustomerID: req.CustomerID,
 		TotalAmount: total, Status: domain.InvoiceUnpaid, Items: items,
 	}

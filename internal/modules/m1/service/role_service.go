@@ -10,11 +10,19 @@ import (
 
 type RoleService struct {
 	rbacRepo rbac.Repository
+	policy   *rbac.PolicyService
 	auditSvc *audit.Service
 }
 
-func NewRoleService(repo rbac.Repository, auditSvc *audit.Service) *RoleService {
-	return &RoleService{rbacRepo: repo, auditSvc: auditSvc}
+func NewRoleService(repo rbac.Repository, policy *rbac.PolicyService, auditSvc *audit.Service) *RoleService {
+	return &RoleService{rbacRepo: repo, policy: policy, auditSvc: auditSvc}
+}
+
+func (s *RoleService) ListPermissions() []rbac.Permission {
+	if s.policy == nil {
+		return []rbac.Permission{}
+	}
+	return s.policy.ListPermissions()
 }
 
 func (s *RoleService) ListRoles(ctx context.Context) ([]rbac.Role, error) {

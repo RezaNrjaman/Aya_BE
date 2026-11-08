@@ -21,6 +21,7 @@ func RegisterRoutes(r *gin.Engine, jwtSecret string, policy *rbac.PolicyService,
 	// Public registration and verified partners contract (K-06)
 	m3.POST("/partners/register", h.Register)
 	m3.GET("/partners/verified", h.ListVerifiedPartners)
+	m3.GET("/partners/:id/status", h.GetPartner)
 
 	protected := m3.Group("")
 	protected.Use(middleware.Authenticate(jwtSecret))

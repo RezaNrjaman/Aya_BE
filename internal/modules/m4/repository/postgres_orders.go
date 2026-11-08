@@ -75,8 +75,8 @@ func (p *PostgresRepository) loadOrderItems(ctx context.Context, oID int) ([]dom
 }
 
 func (p *PostgresRepository) UpdateOrder(ctx context.Context, o *domain.Order) error {
-	sql := `UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2`
-	ct, err := p.pool.Exec(ctx, sql, o.Status, o.ID)
+	sql := `UPDATE orders SET order_no = $1, status = $2, updated_at = NOW() WHERE id = $3`
+	ct, err := p.pool.Exec(ctx, sql, o.OrderNo, o.Status, o.ID)
 	if err != nil {
 		return err
 	}

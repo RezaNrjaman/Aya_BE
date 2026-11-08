@@ -61,8 +61,8 @@ func (p *PostgresRepository) loadInvoiceItems(ctx context.Context, invID int) ([
 }
 
 func (p *PostgresRepository) UpdateInvoice(ctx context.Context, inv *domain.Invoice) error {
-	sql := `UPDATE invoices SET status = $1, paid_at = $2, updated_at = NOW() WHERE id = $3`
-	ct, err := p.pool.Exec(ctx, sql, inv.Status, inv.PaidAt, inv.ID)
+	sql := `UPDATE invoices SET invoice_no = $1, status = $2, paid_at = $3, updated_at = NOW() WHERE id = $4`
+	ct, err := p.pool.Exec(ctx, sql, inv.InvoiceNo, inv.Status, inv.PaidAt, inv.ID)
 	if err != nil {
 		return err
 	}

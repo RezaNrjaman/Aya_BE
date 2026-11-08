@@ -24,6 +24,10 @@ func (h *RoleHandler) ListRoles(c *gin.Context) {
 	response.OK(c, roles)
 }
 
+func (h *RoleHandler) ListPermissions(c *gin.Context) {
+	response.OK(c, h.roleSvc.ListPermissions())
+}
+
 func (h *RoleHandler) CreateRole(c *gin.Context) {
 	var req dto.CreateRoleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

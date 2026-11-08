@@ -30,7 +30,7 @@ func InitModule(r *gin.Engine, secret string, exp int, rRepo rbac.Repository, pS
 	uRepo := resolveUserRepo(uRepoOpt...)
 	authSvc := service.NewAuthService(uRepo, rRepo, aSvc, secret, exp)
 	userSvc := service.NewUserService(uRepo, rRepo, aSvc)
-	roleSvc := service.NewRoleService(rRepo, aSvc)
+	roleSvc := service.NewRoleService(rRepo, pSvc, aSvc)
 
 	h := Handlers{
 		Auth:  handler.NewAuthHandler(authSvc),

@@ -44,6 +44,7 @@ func (s *QuotationService) CreateQuotation(ctx context.Context, req dto.CreateQu
 	}
 	items, total := calculateQuotationItems(req.Items)
 	q := &domain.Quotation{
+		QuotationNo: formatQuotationNo(int(time.Now().UnixNano() % 10000)),
 		UnitUsahaID: req.UnitUsahaID, PartnerID: req.PartnerID, CustomerID: req.CustomerID,
 		TotalAmount: total, Status: domain.QuotationDraft, Items: items,
 	}

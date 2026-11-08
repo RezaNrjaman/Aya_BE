@@ -25,6 +25,7 @@ func registerUserRoutes(rg *gin.RouterGroup, policy *rbac.PolicyService, h *hand
 
 func registerRoleRoutes(rg *gin.RouterGroup, policy *rbac.PolicyService, h *handler.RoleHandler) {
 	rg.GET("", middleware.RequirePermission(policy, "m1.roles.read"), h.ListRoles)
+	rg.GET("/permissions", middleware.RequirePermission(policy, "m1.roles.read"), h.ListPermissions)
 	rg.POST("", middleware.RequirePermission(policy, "m1.roles.manage"), h.CreateRole)
 	rg.PATCH("/:name", middleware.RequirePermission(policy, "m1.roles.manage"), h.UpdateRole)
 	rg.POST("/:name/permissions", middleware.RequirePermission(policy, "m1.roles.manage"), h.AssignPermission)

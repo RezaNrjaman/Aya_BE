@@ -49,7 +49,7 @@ func (s *OrderService) resolveOrderItems(ctx context.Context, inputs []dto.Order
 // CreateOrder serves Kontrak K-04: POST /api/m4/v1/orders with idempotency support
 func (s *OrderService) CreateOrder(ctx context.Context, req dto.CreateOrderRequest, actor string) (*domain.Order, error) {
 	if req.IdempotencyKey != "" {
-		if existing, err := s.repo.GetOrderByIdempotency(ctx, req.IdempotencyKey); err == nil {
+		if existing, err := s.repo.GetOrderByIdempotency(ctx, req.IdempotencyKey); err == nil && existing != nil {
 			return existing, nil
 		}
 	}
@@ -58,6 +58,7 @@ func (s *OrderService) CreateOrder(ctx context.Context, req dto.CreateOrderReque
 		return nil, err
 	}
 	o := &domain.Order{
+		OrderNo: formatOrderNo(int(time.Now().UnixNano() % 10000)),
 		CustomerID: req.CustomerID, TotalAmount: total, Status: domain.OrderNew,
 		IdempotencyKey: req.IdempotencyKey, Items: items,
 	}
