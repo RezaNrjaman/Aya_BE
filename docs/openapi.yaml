@@ -1,0 +1,1786 @@
+openapi: 3.0.3
+info:
+  title: Araya Business Hub Platform API
+  version: 1.0.0
+  description: |
+    Spesifikasi REST API resmi untuk Araya Business Hub Platform (M1-M5).
+    Mengikuti Panduan API Bersama v1.0 dan standar enkapsulasi envelope.
+servers:
+  - url: http://localhost:8080
+    description: Lingkungan Development Lokal
+  - url: https://api.araya-hub.example.com
+    description: Lingkungan Production
+
+paths:
+  /health:
+    get:
+      summary: Root health check probe
+      description: Probe sederhana untuk load balancer / container orchestrator
+      responses:
+        '200':
+          description: Service berjalan normal
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  time:
+                    type: string
+                    format: date-time
+
+  /api/v1/health:
+    get:
+      summary: API platform health check
+      description: Endpoint status kesehatan platform yang mencakup status database
+      responses:
+        '200':
+          description: Health check envelope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  # ============================================================================
+  # M1 — Authentication & User Management Endpoints
+  # ============================================================================
+  /api/m1/v1/login:
+    post:
+      summary: User Login & JWT Issuance (M1-US1 / M1-002)
+      description: Login terpusat platform yang memvalidasi kredensial dan menerbitkan JWT 8 jam.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  example: admin@araya.com
+                password:
+                  type: string
+                  example: Admin1234!
+      responses:
+        '200':
+          description: Login berhasil
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '401':
+          description: Kredensial tidak valid atau akun dinonaktifkan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/m1/v1/me:
+    get:
+      summary: Current User Profile (Kontrak K-01 / M1-009)
+      description: Mengambil profil pengguna yang sedang login berdasarkan Bearer JWT.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Profil berhasil diambil
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/m1/v1/password:
+    patch:
+      summary: Change Password (M1-US4 / M1-004)
+      description: Mengubah kata sandi pengguna dengan validasi kata sandi lama.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - old_password
+                - new_password
+              properties:
+                old_password:
+                  type: string
+                new_password:
+                  type: string
+      responses:
+        '200':
+          description: Kata sandi berhasil diubah
+        '422':
+          description: Kata sandi lama salah atau baru kurang dari 8 karakter
+
+  /api/m1/v1/users:
+    get:
+      summary: List Users (M1-US3 / M1-003)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+            default: 20
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: division
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListEnvelope'
+    post:
+      summary: Create New User (M1-US3 / M1-003)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+                - name
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+                name:
+                  type: string
+                phone:
+                  type: string
+                division_id:
+                  type: integer
+                role:
+                  type: string
+                unit_usaha_id:
+                  type: integer
+      responses:
+        '201':
+          description: User created
+
+  /api/m1/v1/users/{id}:
+    get:
+      summary: Get User by ID
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+    patch:
+      summary: Update User
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+    delete:
+      summary: Deactivate User (Soft Delete / Retention)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Pengguna dinonaktifkan
+
+  /api/m1/v1/users/{id}/roles:
+    post:
+      summary: Assign Role & Scope to User (M1-008)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Role berhasil ditetapkan
+
+  /api/m1/v1/roles:
+    get:
+      summary: List Dynamic Roles (M1-005)
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+    post:
+      summary: Create Dynamic Role (M1-005)
+      security:
+        - BearerAuth: []
+      responses:
+        '201':
+          description: Role created
+
+  /api/m1/v1/audit-logs:
+    get:
+      summary: List Audit Logs (M1-US2 / M1-010)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListEnvelope'
+
+  # ============================================================================
+  # M2 — Business Unit Management & Dashboard Endpoints
+  # ============================================================================
+  /api/m2/v1/business-units:
+    get:
+      summary: Active Business Units List (Kontrak K-02 / M2-003)
+      description: Menyediakan daftar seluruh unit usaha aktif untuk konsumsi publik maupun modul lain (M4, M5).
+      responses:
+        '200':
+          description: Daftar unit usaha aktif
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+    post:
+      summary: Create Business Unit (M2-US1 / M2-002)
+      description: Mendaftarkan unit usaha baru ke dalam platform (memerlukan permission m2.business_units.create).
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUnitRequest'
+      responses:
+        '201':
+          description: Unit usaha berhasil dibuat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/m2/v1/admin/business-units:
+    get:
+      summary: List All Business Units for Admin (M2-002)
+      description: Mengambil seluruh unit usaha dengan filter pagination, search, category, dan active_only.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+            default: 20
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: category
+          schema:
+            type: string
+        - in: query
+          name: active_only
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListEnvelope'
+
+  /api/m2/v1/business-units/{id}:
+    get:
+      summary: Get Business Unit Detail (M2-002)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+    patch:
+      summary: Update Business Unit (M2-US1 / M2-002)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUnitRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /api/m2/v1/business-units/{id}/deactivate:
+    post:
+      summary: Deactivate Business Unit (M2-US3 / M2-002)
+      description: Menonaktifkan unit usaha sehingga otomatis dikeluarkan dari Kontrak K-02.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /api/m2/v1/business-units/{id}/activate:
+    post:
+      summary: Reactivate Business Unit (M2-US3 / M2-002)
+      description: Mengaktifkan kembali unit usaha sehingga tampil kembali di Kontrak K-02.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /api/m2/v1/dashboard-summary:
+    get:
+      summary: Dashboard Summary Metrics (Kontrak K-03 / M2-006 & M2-007)
+      description: Mengambil ringkasan metrik performa (omzet, pesanan, mitra, produk) dengan filter periode dan otorisasi scope unit bisnis.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+          example: '2026-10-01'
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+          example: '2026-10-31'
+        - in: query
+          name: unit_usaha_id
+          schema:
+            type: integer
+          example: 1
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ============================================================================
+  # M3 — Partner Management Endpoints
+  # ============================================================================
+  /api/m3/v1/partners/register:
+    post:
+      summary: Partner Registration (M3-US1 / M3-002)
+      description: Mengajukan pendaftaran calon mitra baru dengan status awal pending.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterPartnerRequest'
+      responses:
+        '201':
+          description: Pendaftaran partner berhasil diajukan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/m3/v1/partners/verified:
+    get:
+      summary: Verified Partners List (Kontrak K-06 / M3-006)
+      description: Menyediakan daftar seluruh mitra resmi yang berstatus terverifikasi untuk konsumsi modul transaksi (M4) dan customer portal (M5).
+      responses:
+        '200':
+          description: Daftar partner terverifikasi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /api/m3/v1/partners:
+    get:
+      summary: List All Partners (M3-004)
+      description: Menampilkan daftar seluruh mitra bagi admin dengan filter status, pencarian, dan paginasi (memerlukan permission m3.partners.read).
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+            default: 20
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [pending, terverifikasi, ditolak, ditangguhkan]
+        - in: query
+          name: search
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListEnvelope'
+
+  /api/m3/v1/partners/{id}:
+    get:
+      summary: Get Partner Detail & Status History (M3-US3 / M3-004)
+      description: Mengambil data profil dan riwayat status verifikasi partner.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /api/m3/v1/partners/{id}/verify:
+    post:
+      summary: Verify Partner Registration (M3-US2 / M3-003)
+      description: Menyetujui atau menolak pengajuan partner (memerlukan permission m3.partners.verify).
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyPartnerRequest'
+      responses:
+        '200':
+          description: Status partner berhasil diperbarui
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/m3/v1/partners/{id}/suspend:
+    post:
+      summary: Suspend Partner (M3-US4 / M3-005)
+      description: Menangguhkan partner terverifikasi dengan alasan tertentu (memerlukan permission m3.partners.suspend).
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuspendPartnerRequest'
+      responses:
+        '200':
+          description: Partner berhasil ditangguhkan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/m3/v1/partners/{id}/reactivate:
+    post:
+      summary: Reactivate Suspended Partner (M3-US4 / M3-005)
+      description: Mengaktifkan kembali partner yang berstatus ditangguhkan (memerlukan permission m3.partners.suspend).
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Partner berhasil diaktifkan kembali
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ============================================================================
+  # M4 — Transaction Management Endpoints
+  # ============================================================================
+  /api/m4/v1/products:
+    get:
+      summary: Read Active Products (Kontrak K-05 / M4-004)
+      description: Menyediakan katalog produk/jasa aktif untuk dikonsumsi Customer Portal (M5). Produk nonaktif otomatis disaring keluar.
+      parameters:
+        - in: query
+          name: unit_usaha_id
+          schema:
+            type: integer
+        - in: query
+          name: category
+          schema:
+            type: string
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListEnvelope'
+    post:
+      summary: Create Product (M4-US1 / M4-003)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/m4/v1/admin/products:
+    get:
+      summary: List Admin Products (M4-003)
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListEnvelope'
+
+  /api/m4/v1/products/{id}:
+    get:
+      summary: Get Product Detail (M4-003)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+    patch:
+      summary: Update Product (M4-003)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProductRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /api/m4/v1/customers:
+    post:
+      summary: Create Customer (M4-US1 / M4-003)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCustomerRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+    get:
+      summary: List Customers (M4-003)
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListEnvelope'
+
+  /api/m4/v1/quotations:
+    post:
+      summary: Create Quotation (M4-US2 / M4-005)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateQuotationRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+    get:
+      summary: List Quotations (M4-005)
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListEnvelope'
+
+  /api/m4/v1/quotations/{id}/approve:
+    post:
+      summary: Approve Quotation (M4-US2 / M4-005)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /api/m4/v1/invoices:
+    post:
+      summary: Create Invoice (M4-US2 / M4-006)
+      description: Membuat invoice tagihan (dapat dikaitkan dari quotation yang sudah disetujui).
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInvoiceRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+    get:
+      summary: List Invoices (M4-006)
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListEnvelope'
+
+  /api/m4/v1/invoices/{id}/pay:
+    post:
+      summary: Pay Invoice via Sandbox Gateway (M4-US3 / M4-007 & M4-008)
+      description: Melakukan simulasi pembayaran invoice via adapter sandbox payment gateway (QRIS, VA, transfer).
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayInvoiceRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /api/m4/v1/orders:
+    post:
+      summary: Create Order from Checkout (Kontrak K-04 / M4-010)
+      description: Menerima pesanan baru dari Customer Portal (M5) dengan dukungan idempotency key.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /api/m4/v1/admin/orders:
+    get:
+      summary: List Admin Orders (M4-009)
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListEnvelope'
+
+  /api/m4/v1/orders/{id}/process:
+    post:
+      summary: Process Order (M4-US4 / M4-009)
+      description: Mengubah status order dari baru menjadi diproses.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /api/m4/v1/orders/{id}/complete:
+    post:
+      summary: Complete Order (M4-US4 / M4-009)
+      description: Mengubah status order menjadi selesai (status final tidak dapat diubah lagi).
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /api/m4/v1/orders/{id}/cancel:
+    post:
+      summary: Cancel Order (M4-US4 / M4-009)
+      description: Membatalkan pesanan yang berstatus baru atau diproses. Pesanan yang sudah selesai ditolak (422).
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  example: Dibatalkan atas permintaan pelanggan
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/m4/v1/payments/callback:
+    post:
+      summary: Payment Webhook Callback (M4-US3 / M4-007 & M4-008)
+      description: Webhook callback dari payment gateway sandbox dengan verifikasi signature HMAC-SHA256 (X-Callback-Signature) dan penanganan idempoten.
+      parameters:
+        - in: header
+          name: X-Callback-Signature
+          required: true
+          schema:
+            type: string
+          description: HMAC-SHA256 signature dari payload menggunakan secret key payment gateway
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentCallbackRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '401':
+          description: Signature tidak valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  # ============================================================================
+  # M5 — Customer Portal & E-Commerce Endpoints
+  # ============================================================================
+  /api/m5/v1/business-units:
+    get:
+      summary: Active Business Units for Portal (M5-US1 / M5-002)
+      description: Mengambil seluruh unit usaha aktif untuk ditampilkan pada katalog portal publik (mengonsumsi Kontrak K-02).
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /api/m5/v1/products:
+    get:
+      summary: Active Products for Portal (M5-US1 / M5-003 & M5-004)
+      description: Mengambil seluruh produk aktif dengan filter kata kunci, kategori, dan unit usaha (mengonsumsi Kontrak K-05).
+      parameters:
+        - in: query
+          name: unit_usaha_id
+          schema:
+            type: integer
+        - in: query
+          name: category
+          schema:
+            type: string
+        - in: query
+          name: search
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /api/m5/v1/catalog:
+    get:
+      summary: Unified Catalog Overview (M5-US1 / M5-002 & M5-003)
+      description: Menampilkan profil unit usaha dan katalog produk aktif dalam satu payload untuk halaman utama portal.
+      parameters:
+        - in: query
+          name: unit_usaha_id
+          schema:
+            type: integer
+        - in: query
+          name: category
+          schema:
+            type: string
+        - in: query
+          name: search
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /api/m5/v1/service-requests:
+    post:
+      summary: Submit Service Request Form (M5-US2 / M5-005)
+      description: Mengajukan formulir permintaan layanan customer ke unit usaha tertentu dengan validasi input.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateServiceRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/m5/v1/admin/service-requests:
+    get:
+      summary: List Service Requests for Admin (M5-005)
+      description: Menampilkan daftar seluruh permintaan layanan customer dengan filter status dan paginasi (memerlukan permission m5.services.manage).
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: unit_usaha_id
+          schema:
+            type: integer
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [pending, diproses, selesai]
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListEnvelope'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  /api/m5/v1/admin/service-requests/{id}:
+    get:
+      summary: Get Service Request Detail (M5-005)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /api/m5/v1/admin/service-requests/{id}/status:
+    patch:
+      summary: Update Service Request Status (M5-005)
+      description: Memperbarui status permintaan layanan (pending -> diproses -> selesai).
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateServiceRequestStatus'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/m5/v1/cart:
+    get:
+      summary: Get Shopping Cart (M5-US3 / M5-006)
+      description: Mengambil data keranjang belanja customer berdasarkan header session X-Session-ID.
+      parameters:
+        - in: header
+          name: X-Session-ID
+          schema:
+            type: string
+          example: sess-abc123
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+    delete:
+      summary: Clear Shopping Cart (M5-006)
+      parameters:
+        - in: header
+          name: X-Session-ID
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /api/m5/v1/cart/items:
+    post:
+      summary: Add Item to Cart (M5-US3 / M5-006)
+      description: Menambahkan produk ke keranjang belanja. Jika produk sudah ada, quantity otomatis bertambah (bukan duplikat).
+      parameters:
+        - in: header
+          name: X-Session-ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddToCartRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/m5/v1/cart/items/{product_id}:
+    patch:
+      summary: Update Cart Item Quantity (M5-006)
+      parameters:
+        - in: header
+          name: X-Session-ID
+          schema:
+            type: string
+        - in: path
+          name: product_id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCartItemRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      summary: Remove Item from Cart (M5-006)
+      parameters:
+        - in: header
+          name: X-Session-ID
+          schema:
+            type: string
+        - in: path
+          name: product_id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /api/m5/v1/cart/checkout:
+    post:
+      summary: Checkout Cart to Order (M5-US4 / M5-007 & M5-008)
+      description: Memvalidasi keranjang belanja, memetakan ke Kontrak Order K-04 M4, menerbitkan order baru, dan mengosongkan keranjang saat sukses.
+      parameters:
+        - in: header
+          name: X-Session-ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token JWT yang diterbitkan oleh M1 (masa berlaku 8 jam)
+    ServiceKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Service-Key
+      description: Kunci rahasia untuk komunikasi antarmodul tanpa konteks user
+
+  schemas:
+    SuccessEnvelope:
+      type: object
+      required:
+        - success
+        - data
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+
+    ListEnvelope:
+      type: object
+      required:
+        - success
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            type: object
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    PaginationMeta:
+      type: object
+      required:
+        - page
+        - per_page
+        - total
+        - total_pages
+      properties:
+        page:
+          type: integer
+          example: 1
+        per_page:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 57
+        total_pages:
+          type: integer
+          example: 3
+
+    ErrorEnvelope:
+      type: object
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              example: Data tidak valid
+            fields:
+              type: object
+              additionalProperties:
+                type: string
+              example:
+                name: Nama wajib diisi
+
+    CreateUnitRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          example: Unit Percetakan & Digital
+        category:
+          type: string
+          example: Percetakan
+        division:
+          type: string
+          example: Operasional
+        description:
+          type: string
+          example: Layanan percetakan cepat dan digital printing
+        contact_email:
+          type: string
+          example: percetakan@araya.com
+        contact_phone:
+          type: string
+          example: "08123456789"
+        address:
+          type: string
+          example: Gedung BPU Lt. 1
+        logo_url:
+          type: string
+          example: https://cdn.araya.com/logo-print.png
+
+    UpdateUnitRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Unit Percetakan & Konveksi Terpadu
+        category:
+          type: string
+        division:
+          type: string
+        description:
+          type: string
+        contact_email:
+          type: string
+        contact_phone:
+          type: string
+        address:
+          type: string
+        logo_url:
+          type: string
+
+    RegisterPartnerRequest:
+      type: object
+      required:
+        - company_name
+        - contact_person
+        - email
+        - phone
+      properties:
+        company_name:
+          type: string
+          example: PT Mitra Solusi Sejahtera
+        contact_person:
+          type: string
+          example: Hendra Gunawan
+        email:
+          type: string
+          example: hendra@mitrasolusi.com
+        phone:
+          type: string
+          example: "081234567890"
+        address:
+          type: string
+          example: Jl. Sudirman No. 88
+
+    VerifyPartnerRequest:
+      type: object
+      required:
+        - action
+      properties:
+        action:
+          type: string
+          enum: [approve, reject]
+          example: approve
+        reason:
+          type: string
+          example: Kelengkapan berkas valid dan terverifikasi
+
+    SuspendPartnerRequest:
+      type: object
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          example: Pelanggaran ketentuan operasional platform
+
+    CreateProductRequest:
+      type: object
+      required:
+        - name
+        - price
+        - unit_usaha_id
+      properties:
+        name:
+          type: string
+          example: Jasa Cetak Banner
+        description:
+          type: string
+          example: Cetak banner ukuran standar
+        price:
+          type: integer
+          example: 150000
+          description: Harga dalam Rupiah (integer)
+        category:
+          type: string
+          example: Percetakan
+        unit_usaha_id:
+          type: integer
+          example: 1
+
+    UpdateProductRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: integer
+        category:
+          type: string
+        is_active:
+          type: boolean
+
+    CreateCustomerRequest:
+      type: object
+      required:
+        - name
+        - email
+      properties:
+        name:
+          type: string
+          example: PT Pelanggan Setia
+        email:
+          type: string
+          example: pelanggan@example.com
+        phone:
+          type: string
+          example: "081234567890"
+        address:
+          type: string
+          example: Jl. Merdeka No. 10
+
+    CreateQuotationRequest:
+      type: object
+      required:
+        - customer_id
+        - items
+      properties:
+        customer_id:
+          type: integer
+          example: 1
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              - product_id
+              - quantity
+            properties:
+              product_id:
+                type: integer
+              quantity:
+                type: integer
+              unit_price:
+                type: integer
+        notes:
+          type: string
+
+    CreateInvoiceRequest:
+      type: object
+      required:
+        - customer_id
+        - items
+      properties:
+        customer_id:
+          type: integer
+          example: 1
+        quotation_id:
+          type: integer
+          description: Opsional — mengaitkan invoice dengan quotation yang sudah disetujui
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              - product_id
+              - quantity
+              - unit_price
+            properties:
+              product_id:
+                type: integer
+              quantity:
+                type: integer
+              unit_price:
+                type: integer
+        due_date:
+          type: string
+          format: date
+          example: "2026-12-31"
+
+    PayInvoiceRequest:
+      type: object
+      required:
+        - payment_method
+      properties:
+        payment_method:
+          type: string
+          enum: [qris, virtual_account, bank_transfer]
+          example: qris
+        amount:
+          type: integer
+          description: Jumlah yang dibayarkan dalam Rupiah (harus sesuai total invoice)
+
+    CreateOrderRequest:
+      type: object
+      required:
+        - customer_id
+        - items
+      properties:
+        customer_id:
+          type: integer
+          example: 1
+        idempotency_key:
+          type: string
+          description: Kunci unik untuk mencegah duplikasi order
+          example: ord-20261108-abc123
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              - product_id
+              - quantity
+            properties:
+              product_id:
+                type: integer
+              quantity:
+                type: integer
+              unit_price:
+                type: integer
+        notes:
+          type: string
+
+    PaymentCallbackRequest:
+      type: object
+      required:
+        - payment_reference
+        - invoice_id
+        - amount
+        - status
+      properties:
+        payment_reference:
+          type: string
+          example: PAY-SANDBOX-1-123456
+        invoice_id:
+          type: integer
+          example: 1
+        amount:
+          type: integer
+          example: 200000
+        status:
+          type: string
+          enum: [SUCCESS, FAILED]
+          example: SUCCESS
+
+    CreateServiceRequest:
+      type: object
+      required:
+        - unit_usaha_id
+        - customer_name
+        - customer_email
+        - description
+      properties:
+        unit_usaha_id:
+          type: integer
+          example: 1
+        customer_name:
+          type: string
+          example: Budi Santoso
+        customer_email:
+          type: string
+          example: budi@example.com
+        customer_phone:
+          type: string
+          example: "08123456789"
+        service_type:
+          type: string
+          example: Percetakan
+        description:
+          type: string
+          example: Permintaan penawaran cetak kalender dinding 500 pcs
+
+    UpdateServiceRequestStatus:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [diproses, selesai]
+          example: diproses
+
+    AddToCartRequest:
+      type: object
+      required:
+        - product_id
+        - quantity
+      properties:
+        product_id:
+          type: integer
+          example: 1
+        quantity:
+          type: integer
+          example: 2
+
+    UpdateCartItemRequest:
+      type: object
+      required:
+        - quantity
+      properties:
+        quantity:
+          type: integer
+          example: 5
+
+    CheckoutRequest:
+      type: object
+      required:
+        - customer_id
+      properties:
+        customer_id:
+          type: integer
+          example: 1
+        idempotency_key:
+          type: string
+          example: chk-20261109-001
+        notes:
+          type: string
+          example: Mohon dikirim pada jam operasional kantor
+
+  responses:
+    UnauthorizedError:
+      description: Token JWT tidak ada atau sudah kedaluwarsa
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+
+    BadRequestError:
+      description: Request tidak valid atau parameter salah
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+
+    ForbiddenError:
+      description: Akses ditolak — permission tidak mencukupi
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+
+    NotFoundError:
+      description: Resource tidak ditemukan
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+
+    ConflictError:
+      description: Konflik data — resource sudah ada atau duplikat
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+
+    ValidationError:
+      description: Data input tidak lolos validasi
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+
