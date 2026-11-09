@@ -27,6 +27,7 @@ import (
 	platformHttp "araya-business-hub/be/internal/platform/http"
 	"araya-business-hub/be/internal/platform/logging"
 	"araya-business-hub/be/internal/platform/rbac"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -38,7 +39,7 @@ func initDB(ctx context.Context, cfg *config.Config) *database.DB {
 	db, err := database.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
 		logging.Error("Failed connecting database", err, nil)
-		if cfg.IsProduction() {
+		if cfg.IsProductionLike() {
 			os.Exit(1)
 		}
 	}
@@ -112,17 +113,19 @@ func main() {
 		logging.Error("Configuration failure", err, nil)
 		os.Exit(1)
 	}
+	run(cfg)
+}
+
+func run(cfg *config.Config) {
 	ctx := context.Background()
 	db := initDB(ctx, cfg)
 	defer db.Close()
-
 	reg, rbacRepo, policySvc := initRBAC(ctx, db)
 	auditSvc := initAudit(db)
 	router := platformHttp.NewRouter(platformHttp.RouterDependencies{
 		Config: cfg, DB: db, RBACRegistry: reg, RBACRepo: rbacRepo, PolicyService: policySvc, AuditService: auditSvc,
 	})
 	initModules(router, cfg, rbacRepo, policySvc, auditSvc, db)
-
 	srv := &http.Server{Addr: fmt.Sprintf(":%s", cfg.Port), Handler: router}
 	startServer(srv)
 	waitForShutdown(srv)

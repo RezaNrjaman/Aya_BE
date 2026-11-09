@@ -3,9 +3,24 @@ package rbac
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
+
+// ErrInvalidRoleName is returned when a role slug does not follow the naming rule.
+var ErrInvalidRoleName = errors.New("kode role hanya boleh huruf kecil, angka, dan garis bawah (3-50 karakter, diawali huruf)")
+
+var roleNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{2,49}$`)
+
+// NormalizeRoleName trims and lowercases a role slug, then validates it.
+func NormalizeRoleName(name string) (string, error) {
+	n := strings.ToLower(strings.TrimSpace(name))
+	if !roleNamePattern.MatchString(n) {
+		return "", ErrInvalidRoleName
+	}
+	return n, nil
+}
 
 // Permission represents a system permission registered by a module.
 type Permission struct {

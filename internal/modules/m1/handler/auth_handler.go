@@ -38,7 +38,7 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 	}
 	profile, err := h.authSvc.GetProfile(c.Request.Context(), user.UserID)
 	if err != nil {
-		response.HandleAppError(c, response.NotFound("Profil pengguna tidak ditemukan"))
+		response.HandleAppError(c, response.Unauthorized("Sesi tidak berlaku: akun tidak aktif atau tidak ditemukan"))
 		return
 	}
 	response.OK(c, profile)

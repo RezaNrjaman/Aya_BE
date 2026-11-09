@@ -135,12 +135,26 @@ func (p *PostgresRepository) loadCartItems(ctx context.Context, cartID int) ([]d
 }
 
 func (p *PostgresRepository) SaveCart(ctx context.Context, cart *domain.Cart) error {
-	_, _ = p.pool.Exec(ctx, `UPDATE carts SET updated_at = NOW() WHERE id = $1`, cart.ID)
-	_, _ = p.pool.Exec(ctx, `DELETE FROM cart_items WHERE cart_id = $1`, cart.ID)
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	if _, err := tx.Exec(ctx, `UPDATE carts SET updated_at = NOW() WHERE id = $1`, cart.ID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM cart_items WHERE cart_id = $1`, cart.ID); err != nil {
+		return err
+	}
 	for i := range cart.Items {
 		itemQ := `INSERT INTO cart_items (cart_id, product_id, quantity, created_at, updated_at)
 		          VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id`
-		_ = p.pool.QueryRow(ctx, itemQ, cart.ID, cart.Items[i].ProductID, cart.Items[i].Quantity).Scan(&cart.Items[i].ID)
+		if err := tx.QueryRow(ctx, itemQ, cart.ID, cart.Items[i].ProductID, cart.Items[i].Quantity).Scan(&cart.Items[i].ID); err != nil {
+			return err
+		}
 	}
-	return nil
+	return tx.Commit(ctx)
 }

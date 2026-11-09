@@ -24,6 +24,10 @@ import (
 
 const TestJWTSecret = "test_jwt_secret_key_minimum_32_characters"
 
+// testM1 exposes the M1 module of the latest SetupFullTestApp so tests can
+// create real fixture accounts (authorization resolves users live).
+var testM1 *m1.Module
+
 func init() {
 	gin.SetMode(gin.TestMode)
 }
@@ -44,6 +48,7 @@ func SetupFullTestApp() (*gin.Engine, *rbac.PolicyService) {
 		Config: cfg, RBACRegistry: reg, RBACRepo: repo, PolicyService: policy, AuditService: auditSvc,
 	})
 	m1Mod := m1.InitModule(router, TestJWTSecret, 8, repo, policy, auditSvc)
+	testM1 = m1Mod
 	m2Mod := m2.InitModule(router, TestJWTSecret, policy, auditSvc)
 	m3.InitModule(router, TestJWTSecret, policy, auditSvc, m1Mod.Provisioner)
 	m4Mod := m4.InitModule(router, TestJWTSecret, policy, auditSvc)
@@ -77,7 +82,7 @@ func DoReqWithHeaders(r *gin.Engine, method, path, token string, body any, hdrs 
 
 func LoginAdmin(r *gin.Engine) string {
 	w := DoReq(r, http.MethodPost, "/api/m1/v1/login", "", dto.LoginRequest{
-		Email: "admin@araya.com", Password: "Admin1234!",
+		Email: "admin@araya.com", Password: "Admin123!",
 	})
 	var resp struct {
 		Data struct {

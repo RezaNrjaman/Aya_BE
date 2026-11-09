@@ -25,9 +25,10 @@ type AssignRoleRequest struct {
 }
 
 type CreateRoleRequest struct {
-	Name        string `json:"name" binding:"required"`
-	DisplayName string `json:"display_name" binding:"required"`
-	Description string `json:"description,omitempty"`
+	Name           string   `json:"name" binding:"required"`
+	DisplayName    string   `json:"display_name" binding:"required"`
+	Description    string   `json:"description,omitempty"`
+	PermissionKeys []string `json:"permission_keys,omitempty"`
 }
 
 type UpdateRoleRequest struct {
@@ -38,4 +39,9 @@ type UpdateRoleRequest struct {
 
 type AssignPermissionRequest struct {
 	PermissionKey string `json:"permission_key" binding:"required"`
+}
+
+// SetRolePermissionsRequest replaces the complete permission set of a role.
+type SetRolePermissionsRequest struct {
+	PermissionKeys []string `json:"permission_keys"`
 }

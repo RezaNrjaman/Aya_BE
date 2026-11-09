@@ -11,6 +11,7 @@ import (
 	"araya-business-hub/be/internal/platform/middleware"
 	"araya-business-hub/be/internal/platform/rbac"
 	"araya-business-hub/be/internal/platform/response"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,69 +24,84 @@ type RouterDependencies struct {
 	AuditService  *audit.Service
 }
 
-// NewRouter sets up the Gin router with all global middlewares and routes.
+// NewRouter builds the HTTP router and registers shared platform routes.
 func NewRouter(deps RouterDependencies) *gin.Engine {
-	if deps.Config.IsProduction() {
+	setGinMode(deps.Config)
+	router := gin.New()
+	applyMiddlewares(router, deps.Config)
+	registerErrorHandlers(router)
+	registerHealthRoutes(router, deps)
+	registerPermissionMetadata(router, deps.RBACRegistry)
+	return router
+}
+
+func setGinMode(cfg *config.Config) {
+	if cfg.IsProductionLike() {
 		gin.SetMode(gin.ReleaseMode)
 	}
+}
 
-	r := gin.New()
+func applyMiddlewares(router *gin.Engine, cfg *config.Config) {
+	router.Use(gin.Recovery())
+	router.Use(middleware.RequestID())
+	router.Use(middleware.Logger())
+	router.Use(middleware.CORS(cfg.AllowedOrigins))
+}
 
-	// Global middlewares
-	r.Use(gin.Recovery())
-	r.Use(middleware.RequestID())
-	r.Use(middleware.Logger())
-	r.Use(middleware.CORS(deps.Config.AllowedOrigins))
-
-	// Handle 404 with standard API envelope
-	r.NoRoute(func(c *gin.Context) {
+func registerErrorHandlers(router *gin.Engine) {
+	router.NoRoute(func(c *gin.Context) {
 		response.HandleAppError(c, response.NotFound("Endpoint tidak ditemukan"))
 	})
-
-	// Handle 405 Method Not Allowed
-	r.NoMethod(func(c *gin.Context) {
+	router.NoMethod(func(c *gin.Context) {
 		response.Error(c, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Metode HTTP tidak diizinkan untuk endpoint ini", nil)
 	})
+}
 
-	// Root simple health check (e.g. for container / load balancer probes)
-	r.GET("/health", func(c *gin.Context) {
+func registerHealthRoutes(router *gin.Engine, deps RouterDependencies) {
+	registerRootHealth(router)
+	registerAPIHealth(router, deps)
+}
+
+func registerRootHealth(router *gin.Engine) {
+	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"status": "ok",
 			"time":   time.Now().UTC().Format(time.RFC3339),
 		})
 	})
+}
 
-	// Platform API Health Check
-	apiV1 := r.Group("/api/v1")
-	{
-		apiV1.GET("/health", func(c *gin.Context) {
-			dbStatus := "disconnected"
-			if deps.DB != nil {
-				ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
-				defer cancel()
-				if err := deps.DB.Ping(ctx); err == nil {
-					dbStatus = "connected"
-				} else {
-					dbStatus = "unreachable"
-				}
-			}
+func registerAPIHealth(router *gin.Engine, deps RouterDependencies) {
+	router.Group("/api/v1").GET("/health", apiHealthHandler(deps))
+}
 
-			response.OK(c, gin.H{
-				"status":      "running",
-				"environment": deps.Config.AppEnv,
-				"database":    dbStatus,
-				"time":        time.Now().UTC().Format(time.RFC3339),
-			})
+func apiHealthHandler(deps RouterDependencies) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		response.OK(c, gin.H{
+			"status": "running", "environment": deps.Config.AppEnv,
+			"database": databaseStatus(c, deps.DB),
+			"time":     time.Now().UTC().Format(time.RFC3339),
 		})
-
-		// Public or Protected RBAC Metadata endpoints (useful for UI Permission Matrix)
-		if deps.RBACRegistry != nil {
-			apiV1.GET("/permissions", func(c *gin.Context) {
-				list := deps.RBACRegistry.List()
-				response.OK(c, list)
-			})
-		}
 	}
+}
 
-	return r
+func databaseStatus(c *gin.Context, db *database.DB) string {
+	if db == nil {
+		return "disconnected"
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+	defer cancel()
+	if err := db.Ping(ctx); err != nil {
+		return "unreachable"
+	}
+	return "connected"
+}
+
+func registerPermissionMetadata(router *gin.Engine, registry *rbac.Registry) {
+	if registry == nil {
+		return
+	}
+	router.Group("/api/v1").GET("/permissions", func(c *gin.Context) {
+		response.OK(c, registry.List())
+	})
 }

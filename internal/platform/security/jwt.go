@@ -16,6 +16,7 @@ type PlatformClaims struct {
 	Role        string `json:"role"`
 	Division    string `json:"division"`
 	UnitUsahaID *int   `json:"unit_usaha_id,omitempty"`
+	PartnerID   *int   `json:"partner_id,omitempty"`
 	jwt.RegisteredClaims
 }
 

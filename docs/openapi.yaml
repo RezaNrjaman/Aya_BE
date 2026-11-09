@@ -65,7 +65,7 @@ paths:
                   example: admin@araya.com
                 password:
                   type: string
-                  example: Admin1234!
+                  example: Admin123!
       responses:
         '200':
           description: Login berhasil
@@ -235,36 +235,174 @@ paths:
   /api/m1/v1/users/{id}/roles:
     post:
       summary: Assign Role & Scope to User (M1-008)
+      description: |
+        Menetapkan satu effective role dan scope unit usaha (ADR-001). Membutuhkan m1.roles.manage.
+        Role harus ada dan aktif. Akun sendiri tidak dapat diubah. Perubahan langsung berlaku
+        pada sesi yang sedang aktif karena otorisasi membaca role terkini dari M1 setiap request.
       security:
         - BearerAuth: []
       parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: integer
+        - $ref: '#/components/parameters/UserIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignRoleRequest'
       responses:
         '200':
           description: Role berhasil ditetapkan
+        '403':
+          description: Tidak punya m1.roles.manage atau mencoba mengubah akun sendiri
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Pengguna tidak ditemukan
+        '422':
+          description: Role tidak ditemukan atau tidak aktif
 
   /api/m1/v1/roles:
     get:
       summary: List Dynamic Roles (M1-005)
+      description: Seluruh role (aktif dan nonaktif) beserta permission yang dikonfigurasi. Membutuhkan m1.roles.read.
       security:
         - BearerAuth: []
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/SuccessEnvelope'
     post:
       summary: Create Dynamic Role (M1-005)
+      description: Membutuhkan m1.roles.manage. Kode role berformat ^[a-z][a-z0-9_]{2,49}$.
       security:
         - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoleRequest'
       responses:
         '201':
           description: Role created
+        '409':
+          description: Kode role sudah digunakan
+        '422':
+          description: Kode role tidak valid atau permission tidak terdaftar
+
+  /api/m1/v1/roles/permissions:
+    get:
+      summary: Permission Registry (M1-006)
+      description: Daftar permission yang didaftarkan modul M1–M5. Membutuhkan m1.roles.read.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /api/m1/v1/roles/{name}:
+    patch:
+      summary: Update Role / Activate / Deactivate (M1-005)
+      description: |
+        Membutuhkan m1.roles.manage. Role nonaktif tidak memberi permission apa pun dan tidak dapat
+        ditetapkan ke pengguna. Role "admin" dan role yang sedang dipakai aktor tidak dapat dinonaktifkan.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RoleNamePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRoleRequest'
+      responses:
+        '200':
+          description: Role diperbarui
+        '403':
+          description: Perubahan akan menghapus kemampuan mengelola hak akses
+        '404':
+          description: Role tidak ditemukan
+
+  /api/m1/v1/roles/{name}/permissions:
+    put:
+      summary: Replace Role Permissions — Permission Matrix (M1-007)
+      description: |
+        Mengganti seluruh permission role secara atomik. Semua key harus terdaftar di registry.
+        Role "admin" dan role aktor wajib tetap memiliki m1.roles.read dan m1.roles.manage.
+        Perubahan dicatat di audit log (added/removed) dan langsung berlaku.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RoleNamePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetRolePermissionsRequest'
+      responses:
+        '200':
+          description: Role dengan permission terbaru
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '403':
+          description: Perubahan akan menghapus kemampuan mengelola hak akses
+        '404':
+          description: Role tidak ditemukan
+        '422':
+          description: Permission tidak terdaftar
+    post:
+      summary: Assign Single Permission to Role (M1-007)
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RoleNamePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [permission_key]
+              properties:
+                permission_key:
+                  type: string
+                  example: m4.orders.manage
+      responses:
+        '200':
+          description: Permission dipetakan
+        '422':
+          description: Permission tidak terdaftar atau role nonaktif
+
+  /api/m1/v1/roles/{name}/permissions/{key}:
+    delete:
+      summary: Revoke Single Permission from Role (M1-007)
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RoleNamePath'
+        - in: path
+          name: key
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Permission dicabut
+        '403':
+          description: Perubahan akan menghapus kemampuan mengelola hak akses
 
   /api/m1/v1/audit-logs:
     get:
@@ -1311,6 +1449,20 @@ components:
       name: X-Service-Key
       description: Kunci rahasia untuk komunikasi antarmodul tanpa konteks user
 
+  parameters:
+    UserIdPath:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: integer
+    RoleNamePath:
+      in: path
+      name: name
+      required: true
+      schema:
+        type: string
+        pattern: '^[a-z][a-z0-9_]{2,49}$'
   schemas:
     SuccessEnvelope:
       type: object
@@ -1390,6 +1542,53 @@ components:
               example:
                 name: Nama wajib diisi
 
+    AssignRoleRequest:
+      type: object
+      required: [role_name]
+      properties:
+        role_name:
+          type: string
+          example: kasir
+        unit_usaha_id:
+          type: integer
+          nullable: true
+          description: Kosongkan untuk scope global
+    CreateRoleRequest:
+      type: object
+      required: [name, display_name]
+      properties:
+        name:
+          type: string
+          pattern: '^[a-z][a-z0-9_]{2,49}$'
+          example: supervisor
+        display_name:
+          type: string
+          example: Supervisor Lapangan
+        description:
+          type: string
+        permission_keys:
+          type: array
+          items:
+            type: string
+          description: Permission awal (opsional), misalnya disalin dari role lain
+    UpdateRoleRequest:
+      type: object
+      properties:
+        display_name:
+          type: string
+        description:
+          type: string
+        is_active:
+          type: boolean
+    SetRolePermissionsRequest:
+      type: object
+      required: [permission_keys]
+      properties:
+        permission_keys:
+          type: array
+          items:
+            type: string
+          example: [m4.products.read, m4.orders.manage]
     CreateUnitRequest:
       type: object
       required:

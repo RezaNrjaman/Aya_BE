@@ -24,6 +24,7 @@ type User struct {
 	DivisionName string    `json:"division,omitempty"`
 	Role         string    `json:"role,omitempty"`
 	UnitUsahaID  *int      `json:"unit_usaha_id,omitempty"`
+	PartnerID    *int      `json:"partner_id,omitempty"`
 	IsActive     bool      `json:"is_active"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`

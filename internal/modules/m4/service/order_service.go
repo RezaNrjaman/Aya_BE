@@ -58,7 +58,7 @@ func (s *OrderService) CreateOrder(ctx context.Context, req dto.CreateOrderReque
 		return nil, err
 	}
 	o := &domain.Order{
-		OrderNo: formatOrderNo(int(time.Now().UnixNano() % 10000)),
+		OrderNo:    formatOrderNo(int(time.Now().UnixNano() % 10000)),
 		CustomerID: req.CustomerID, TotalAmount: total, Status: domain.OrderNew,
 		IdempotencyKey: req.IdempotencyKey, Items: items,
 	}

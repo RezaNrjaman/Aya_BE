@@ -27,20 +27,21 @@ func formatPeriod(from, to *time.Time) (string, string) {
 	return fromStr, toStr
 }
 
-func buildBaselineMetrics(activeCount int) dto.DashboardMetrics {
+func buildBaselineMetrics() dto.DashboardMetrics {
+	// Keep the baseline honest: modules that own these entities have not been
+	// wired into the dashboard yet, so report zero instead of invented numbers.
 	return dto.DashboardMetrics{
 		TotalRevenue:         0,
 		TotalOrders:          0,
 		ActivePartners:       0,
-		ActiveProducts:       activeCount * 2,
+		ActiveProducts:       0,
 		PendingVerifications: 0,
 	}
 }
 
 func (s *DashboardService) GetSummary(ctx context.Context, unitID *int, from, to *time.Time) (*dto.DashboardSummaryResponse, error) {
-	activeUnits, _ := s.unitRepo.ListActive(ctx)
 	fromStr, toStr := formatPeriod(from, to)
-	metrics := buildBaselineMetrics(len(activeUnits))
+	metrics := buildBaselineMetrics()
 
 	return &dto.DashboardSummaryResponse{
 		UnitUsahaID:  unitID,

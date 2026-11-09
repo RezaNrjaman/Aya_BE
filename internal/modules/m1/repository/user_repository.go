@@ -13,6 +13,6 @@ type UserRepository interface {
 	GetByEmail(ctx context.Context, email string) (*domain.User, error)
 	Update(ctx context.Context, u *domain.User) error
 	UpdatePassword(ctx context.Context, id int, hash string) error
-	List(ctx context.Context, search, division string, limit, offset int) ([]domain.User, int, error)
+	List(ctx context.Context, search, division string, partnerID *int, limit, offset int) ([]domain.User, int, error)
 	Deactivate(ctx context.Context, id int) error
 }

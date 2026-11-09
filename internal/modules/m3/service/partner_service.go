@@ -15,6 +15,7 @@ import (
 type UserProvisioner interface {
 	ProvisionPartner(ctx context.Context, email, name, phone, password string) (int, error)
 	SetUserStatus(ctx context.Context, email string, isActive bool) error
+	LinkPartnerUser(ctx context.Context, userID, partnerID int) error
 }
 
 type PartnerService struct {
@@ -58,6 +59,23 @@ func (s *PartnerService) GetPartner(ctx context.Context, id int) (*domain.Partne
 	return s.repo.GetByID(ctx, id)
 }
 
+func (s *PartnerService) GetPartnerByUserID(ctx context.Context, userID int) (*domain.Partner, error) {
+	return s.repo.GetByUserID(ctx, userID)
+}
+
+// EnsurePartnerAccess blocks partner-scoped actors from reading or mutating a
+// different partner record. Admins (scope == nil, restricted == false) keep
+// global access.
+func (s *PartnerService) EnsurePartnerAccess(ctx context.Context, id int, scope *int, restricted bool) error {
+	if !restricted {
+		return nil
+	}
+	if scope == nil || *scope != id {
+		return domain.ErrPartnerNotFound
+	}
+	return nil
+}
+
 func (s *PartnerService) GetPartnerDetail(ctx context.Context, id int) (*dto.PartnerDetailResponse, error) {
 	p, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -72,6 +90,32 @@ func (s *PartnerService) GetPartnerDetail(ctx context.Context, id int) (*dto.Par
 
 func (s *PartnerService) ListPartners(ctx context.Context, status, search string, limit, offset int) ([]domain.Partner, int, error) {
 	return s.repo.List(ctx, status, search, limit, offset)
+}
+
+// ListPartnersScoped returns only the actor's own partner for partner-scoped
+// users. Search and status filters are intentionally ignored for that view.
+func (s *PartnerService) ListPartnersScoped(ctx context.Context, scope *int, restricted bool, status, search string, limit, offset int) ([]domain.Partner, int, error) {
+	if !restricted {
+		return s.repo.List(ctx, status, search, limit, offset)
+	}
+	if scope == nil {
+		return []domain.Partner{}, 0, nil
+	}
+	p, err := s.repo.GetByID(ctx, *scope)
+	if err != nil {
+		if errors.Is(err, domain.ErrPartnerNotFound) {
+			return []domain.Partner{}, 0, nil
+		}
+		return nil, 0, err
+	}
+	return []domain.Partner{*p}, 1, nil
+}
+
+func (s *PartnerService) GetPartnerDetailScoped(ctx context.Context, id int, scope *int, restricted bool) (*dto.PartnerDetailResponse, error) {
+	if err := s.EnsurePartnerAccess(ctx, id, scope, restricted); err != nil {
+		return nil, err
+	}
+	return s.GetPartnerDetail(ctx, id)
 }
 
 func (s *PartnerService) ListVerifiedPartners(ctx context.Context) ([]domain.Partner, error) {
@@ -102,6 +146,7 @@ func (s *PartnerService) VerifyPartner(ctx context.Context, id int, req dto.Veri
 	if req.Action == "approve" && s.provisioner != nil {
 		if uid, err := s.provisioner.ProvisionPartner(ctx, p.Email, p.ContactPerson, p.Phone, "Partner123!"); err == nil && uid > 0 {
 			p.UserID = &uid
+			_ = s.provisioner.LinkPartnerUser(ctx, uid, p.ID)
 		}
 	}
 	if err := s.repo.Update(ctx, p); err != nil {

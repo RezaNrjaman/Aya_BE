@@ -46,6 +46,18 @@ func (p *PostgresPartnerRepository) GetByEmail(ctx context.Context, email string
 	return p.scanPartner(p.pool.QueryRow(ctx, q, email))
 }
 
+func (p *PostgresPartnerRepository) GetByUserID(ctx context.Context, userID int) (*domain.Partner, error) {
+	q := `SELECT p.id, p.user_id, p.company_name, p.contact_person, p.email, p.phone, COALESCE(p.address, ''),
+	             p.status, COALESCE(p.rejection_reason, ''), COALESCE(p.suspension_reason, ''),
+	             p.verified_at, COALESCE(v.name, ''), p.created_at, p.updated_at
+	      FROM partners p
+	      LEFT JOIN users v ON p.verified_by = v.id
+	      WHERE p.user_id = $1
+	         OR EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.partner_id = p.id)
+	      LIMIT 1`
+	return p.scanPartner(p.pool.QueryRow(ctx, q, userID))
+}
+
 func (p *PostgresPartnerRepository) scanPartner(row pgx.Row) (*domain.Partner, error) {
 	var part domain.Partner
 	err := row.Scan(&part.ID, &part.UserID, &part.CompanyName, &part.ContactPerson, &part.Email, &part.Phone,
@@ -132,13 +144,14 @@ func (p *PostgresPartnerRepository) collectRows(rows pgx.Rows) ([]domain.Partner
 }
 
 func (p *PostgresPartnerRepository) AddHistory(ctx context.Context, h *domain.StatusHistory) error {
-	q := `INSERT INTO partner_status_histories (partner_id, from_status, to_status, reason, created_at)
-	      VALUES ($1, $2, $3, $4, NOW()) RETURNING id, created_at`
-	return p.pool.QueryRow(ctx, q, h.PartnerID, h.FromStatus, h.ToStatus, h.Reason).Scan(&h.ID, &h.CreatedAt)
+	q := `INSERT INTO partner_status_histories (partner_id, from_status, to_status, reason, changed_by_name, created_at)
+	      VALUES ($1, $2, $3, $4, $5, NOW()) RETURNING id, created_at`
+	return p.pool.QueryRow(ctx, q, h.PartnerID, h.FromStatus, h.ToStatus, h.Reason, h.ChangedBy).Scan(&h.ID, &h.CreatedAt)
 }
 
 func (p *PostgresPartnerRepository) GetHistories(ctx context.Context, partnerID int) ([]domain.StatusHistory, error) {
-	q := `SELECT id, partner_id, COALESCE(from_status, ''), to_status, COALESCE(reason, ''), created_at
+	q := `SELECT id, partner_id, COALESCE(from_status, ''), to_status, COALESCE(reason, ''),
+	             COALESCE(changed_by_name, ''), created_at
 	      FROM partner_status_histories WHERE partner_id = $1 ORDER BY created_at ASC`
 	rows, err := p.pool.Query(ctx, q, partnerID)
 	if err != nil {
@@ -149,7 +162,7 @@ func (p *PostgresPartnerRepository) GetHistories(ctx context.Context, partnerID 
 	var list []domain.StatusHistory
 	for rows.Next() {
 		var h domain.StatusHistory
-		if err := rows.Scan(&h.ID, &h.PartnerID, &h.FromStatus, &h.ToStatus, &h.Reason, &h.CreatedAt); err != nil {
+		if err := rows.Scan(&h.ID, &h.PartnerID, &h.FromStatus, &h.ToStatus, &h.Reason, &h.ChangedBy, &h.CreatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, h)

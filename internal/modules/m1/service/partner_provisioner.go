@@ -50,3 +50,14 @@ func (p *PartnerProvisioner) SetUserStatus(ctx context.Context, email string, is
 	existing.IsActive = isActive
 	return p.userRepo.Update(ctx, existing)
 }
+
+// LinkPartnerUser associates a user account with its partner organisation. This
+// is what lets M1 and M3 scope data to the logged-in partner's own members.
+func (p *PartnerProvisioner) LinkPartnerUser(ctx context.Context, userID, partnerID int) error {
+	existing, err := p.userRepo.GetByID(ctx, userID)
+	if err != nil || existing == nil {
+		return err
+	}
+	existing.PartnerID = &partnerID
+	return p.userRepo.Update(ctx, existing)
+}

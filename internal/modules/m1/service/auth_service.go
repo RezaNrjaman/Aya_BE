@@ -33,13 +33,7 @@ func NewAuthService(uRepo repository.UserRepository, rRepo rbac.Repository, aSvc
 }
 
 func (s *AuthService) verifyUserPassword(user *domain.User, password string) error {
-	match := domain.CheckPassword(password, user.PasswordHash)
-	if !match && user.Email == "admin@araya.com" {
-		if password == "Admin1234!" || password == "Admin123!" {
-			match = true
-		}
-	}
-	if !match {
+	if !domain.CheckPassword(password, user.PasswordHash) {
 		return ErrInvalidCredentials
 	}
 	if !user.CanLogin() {
@@ -55,6 +49,7 @@ func (s *AuthService) generateUserJWT(user *domain.User) (string, error) {
 		Role:        user.Role,
 		Division:    user.DivisionName,
 		UnitUsahaID: user.UnitUsahaID,
+		PartnerID:   user.PartnerID,
 	}
 	return security.GenerateToken(claims, s.jwtSecret, s.expHours)
 }
@@ -81,7 +76,8 @@ func (s *AuthService) Login(ctx context.Context, req dto.LoginRequest) (*dto.Log
 	return &dto.LoginResponse{
 		Token: token,
 		User: dto.UserSummary{
-			ID: user.ID, Email: user.Email, Name: user.Name, Role: user.Role, Division: user.DivisionName, UnitUsahaID: user.UnitUsahaID, Permissions: perms,
+			ID: user.ID, Email: user.Email, Name: user.Name, Role: user.Role, Division: user.DivisionName,
+			UnitUsahaID: user.UnitUsahaID, PartnerID: user.PartnerID, Permissions: perms,
 		},
 	}, nil
 }
@@ -91,12 +87,16 @@ func (s *AuthService) GetProfile(ctx context.Context, userID int) (*dto.ProfileR
 	if err != nil {
 		return nil, err
 	}
+	if !user.CanLogin() {
+		return nil, domain.ErrUserInactive
+	}
 	perms, _ := s.rbacRepo.GetRolePermissions(ctx, user.Role)
 	if perms == nil {
 		perms = []string{}
 	}
 	return &dto.ProfileResponse{
-		ID: user.ID, Email: user.Email, Name: user.Name, Role: user.Role, Division: user.DivisionName, UnitUsahaID: user.UnitUsahaID, Permissions: perms,
+		ID: user.ID, Email: user.Email, Name: user.Name, Role: user.Role, Division: user.DivisionName,
+		UnitUsahaID: user.UnitUsahaID, PartnerID: user.PartnerID, Permissions: perms,
 	}, nil
 }
 

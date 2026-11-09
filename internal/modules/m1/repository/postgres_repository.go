@@ -19,9 +19,14 @@ func NewPostgresUserRepository(pool *pgxpool.Pool) *PostgresUserRepository {
 }
 
 func (p *PostgresUserRepository) Create(ctx context.Context, u *domain.User) error {
-	q := `INSERT INTO users (email, password_hash, name, phone, division_id, is_active, created_at, updated_at)
-	      VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW()) RETURNING id, created_at, updated_at`
-	err := p.pool.QueryRow(ctx, q, u.Email, u.PasswordHash, u.Name, u.Phone, u.DivisionID, u.IsActive).
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := `INSERT INTO users (email, password_hash, name, phone, division_id, partner_id, is_active, created_at, updated_at)
+	      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW()) RETURNING id, created_at, updated_at`
+	err = tx.QueryRow(ctx, q, u.Email, u.PasswordHash, u.Name, u.Phone, u.DivisionID, u.PartnerID, u.IsActive).
 		Scan(&u.ID, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil && strings.Contains(err.Error(), "duplicate key") {
 		return domain.ErrDuplicateEmail
@@ -29,21 +34,46 @@ func (p *PostgresUserRepository) Create(ctx context.Context, u *domain.User) err
 	if err != nil {
 		return err
 	}
-	if u.Role != "" {
-		assignQ := `INSERT INTO user_role_assignments (user_id, role_id, unit_usaha_id, created_at)
-			SELECT $1, r.id, $2, NOW() FROM roles r WHERE r.name = $3
-			ON CONFLICT (user_id, role_id, unit_usaha_id) DO NOTHING`
-		_, _ = p.pool.Exec(ctx, assignQ, u.ID, u.UnitUsahaID, u.Role)
+	if err := replaceRoleAssignment(ctx, tx, u); err != nil {
+		return err
 	}
-	return nil
+	return tx.Commit(ctx)
+}
+
+// ErrRoleNotAssignable is returned when the requested role does not exist or
+// is inactive, so the user would silently end up without any access.
+var ErrRoleNotAssignable = errors.New("role tidak ditemukan atau tidak aktif")
+
+// replaceRoleAssignment stores the user's single effective role/scope.
+func replaceRoleAssignment(ctx context.Context, tx pgx.Tx, u *domain.User) error {
+	if u.Role == "" {
+		return nil
+	}
+	var roleID int
+	err := tx.QueryRow(ctx, `SELECT id FROM roles WHERE name = $1 AND is_active = TRUE`, u.Role).Scan(&roleID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrRoleNotAssignable
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM user_role_assignments WHERE user_id = $1`, u.ID); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO user_role_assignments (user_id, role_id, unit_usaha_id, created_at)
+		VALUES ($1, $2, $3, NOW())`, u.ID, roleID, u.UnitUsahaID)
+	return err
 }
 
 func (p *PostgresUserRepository) GetByID(ctx context.Context, id int) (*domain.User, error) {
 	q := `SELECT u.id, u.email, u.password_hash, u.name, COALESCE(u.phone, ''), u.division_id,
-	             COALESCE(d.name, ''), COALESCE(r.name, ''), ura.unit_usaha_id, u.is_active, u.created_at, u.updated_at
+	             COALESCE(d.name, ''), COALESCE(r.name, ''), ura.unit_usaha_id, u.partner_id, u.is_active, u.created_at, u.updated_at
 	      FROM users u
 	      LEFT JOIN divisions d ON u.division_id = d.id
-	      LEFT JOIN user_role_assignments ura ON u.id = ura.user_id
+	      LEFT JOIN LATERAL (
+	          SELECT a.role_id, a.unit_usaha_id FROM user_role_assignments a
+	          WHERE a.user_id = u.id ORDER BY a.created_at DESC, a.id DESC LIMIT 1
+	      ) ura ON TRUE
 	      LEFT JOIN roles r ON ura.role_id = r.id
 	      WHERE u.id = $1`
 	return p.scanUser(p.pool.QueryRow(ctx, q, id))
@@ -51,10 +81,13 @@ func (p *PostgresUserRepository) GetByID(ctx context.Context, id int) (*domain.U
 
 func (p *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
 	q := `SELECT u.id, u.email, u.password_hash, u.name, COALESCE(u.phone, ''), u.division_id,
-	             COALESCE(d.name, ''), COALESCE(r.name, ''), ura.unit_usaha_id, u.is_active, u.created_at, u.updated_at
+	             COALESCE(d.name, ''), COALESCE(r.name, ''), ura.unit_usaha_id, u.partner_id, u.is_active, u.created_at, u.updated_at
 	      FROM users u
 	      LEFT JOIN divisions d ON u.division_id = d.id
-	      LEFT JOIN user_role_assignments ura ON u.id = ura.user_id
+	      LEFT JOIN LATERAL (
+	          SELECT a.role_id, a.unit_usaha_id FROM user_role_assignments a
+	          WHERE a.user_id = u.id ORDER BY a.created_at DESC, a.id DESC LIMIT 1
+	      ) ura ON TRUE
 	      LEFT JOIN roles r ON ura.role_id = r.id
 	      WHERE LOWER(u.email) = LOWER($1)`
 	return p.scanUser(p.pool.QueryRow(ctx, q, email))
@@ -63,7 +96,7 @@ func (p *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (
 func (p *PostgresUserRepository) scanUser(row pgx.Row) (*domain.User, error) {
 	var u domain.User
 	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Phone, &u.DivisionID,
-		&u.DivisionName, &u.Role, &u.UnitUsahaID, &u.IsActive, &u.CreatedAt, &u.UpdatedAt)
+		&u.DivisionName, &u.Role, &u.UnitUsahaID, &u.PartnerID, &u.IsActive, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrUserNotFound
@@ -74,19 +107,23 @@ func (p *PostgresUserRepository) scanUser(row pgx.Row) (*domain.User, error) {
 }
 
 func (p *PostgresUserRepository) Update(ctx context.Context, u *domain.User) error {
-	q := `UPDATE users SET name = $1, phone = $2, division_id = $3, is_active = $4, updated_at = NOW() WHERE id = $5`
-	ct, err := p.pool.Exec(ctx, q, u.Name, u.Phone, u.DivisionID, u.IsActive, u.ID)
-	if err != nil || ct.RowsAffected() == 0 {
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := `UPDATE users SET name = $1, phone = $2, division_id = $3, partner_id = $4, is_active = $5, updated_at = NOW() WHERE id = $6`
+	ct, err := tx.Exec(ctx, q, u.Name, u.Phone, u.DivisionID, u.PartnerID, u.IsActive, u.ID)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
 		return domain.ErrUserNotFound
 	}
-	if u.Role != "" {
-		_, _ = p.pool.Exec(ctx, `DELETE FROM user_role_assignments WHERE user_id = $1`, u.ID)
-		assignQ := `INSERT INTO user_role_assignments (user_id, role_id, unit_usaha_id, created_at)
-			SELECT $1, r.id, $2, NOW() FROM roles r WHERE r.name = $3
-			ON CONFLICT (user_id, role_id, unit_usaha_id) DO NOTHING`
-		_, _ = p.pool.Exec(ctx, assignQ, u.ID, u.UnitUsahaID, u.Role)
+	if err := replaceRoleAssignment(ctx, tx, u); err != nil {
+		return err
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 func (p *PostgresUserRepository) UpdatePassword(ctx context.Context, id int, hash string) error {
@@ -113,31 +150,36 @@ func (p *PostgresUserRepository) Deactivate(ctx context.Context, id int) error {
 	return nil
 }
 
-func (p *PostgresUserRepository) List(ctx context.Context, search, division string, limit, offset int) ([]domain.User, int, error) {
+func (p *PostgresUserRepository) List(ctx context.Context, search, division string, partnerID *int, limit, offset int) ([]domain.User, int, error) {
 	pattern := "%" + strings.TrimSpace(search) + "%"
 	divPattern := "%" + strings.TrimSpace(division) + "%"
 	countQ := `SELECT count(*) FROM users u LEFT JOIN divisions d ON u.division_id = d.id
 	           WHERE ($1 = '%%' OR u.name ILIKE $1 OR u.email ILIKE $1)
-	             AND ($2 = '%%' OR d.name ILIKE $2)`
+	             AND ($2 = '%%' OR d.name ILIKE $2)
+	             AND ($3::int IS NULL OR u.partner_id = $3)`
 	var total int
-	if err := p.pool.QueryRow(ctx, countQ, pattern, divPattern).Scan(&total); err != nil {
+	if err := p.pool.QueryRow(ctx, countQ, pattern, divPattern, partnerID).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	users, err := p.queryUserList(ctx, pattern, divPattern, limit, offset)
+	users, err := p.queryUserList(ctx, pattern, divPattern, partnerID, limit, offset)
 	return users, total, err
 }
 
-func (p *PostgresUserRepository) queryUserList(ctx context.Context, s, d string, limit, offset int) ([]domain.User, error) {
+func (p *PostgresUserRepository) queryUserList(ctx context.Context, s, d string, partnerID *int, limit, offset int) ([]domain.User, error) {
 	q := `SELECT u.id, u.email, u.password_hash, u.name, COALESCE(u.phone, ''), u.division_id,
-	             COALESCE(d.name, ''), COALESCE(r.name, ''), ura.unit_usaha_id, u.is_active, u.created_at, u.updated_at
+	             COALESCE(d.name, ''), COALESCE(r.name, ''), ura.unit_usaha_id, u.partner_id, u.is_active, u.created_at, u.updated_at
 	      FROM users u
 	      LEFT JOIN divisions d ON u.division_id = d.id
-	      LEFT JOIN user_role_assignments ura ON u.id = ura.user_id
+	      LEFT JOIN LATERAL (
+	          SELECT a.role_id, a.unit_usaha_id FROM user_role_assignments a
+	          WHERE a.user_id = u.id ORDER BY a.created_at DESC, a.id DESC LIMIT 1
+	      ) ura ON TRUE
 	      LEFT JOIN roles r ON ura.role_id = r.id
 	      WHERE ($1 = '%%' OR u.name ILIKE $1 OR u.email ILIKE $1)
 	        AND ($2 = '%%' OR d.name ILIKE $2)
-	      ORDER BY u.id ASC LIMIT $3 OFFSET $4`
-	rows, err := p.pool.Query(ctx, q, s, d, limit, offset)
+	        AND ($3::int IS NULL OR u.partner_id = $3)
+	      ORDER BY u.id ASC LIMIT $4 OFFSET $5`
+	rows, err := p.pool.Query(ctx, q, s, d, partnerID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +192,7 @@ func (p *PostgresUserRepository) collectUserRows(rows pgx.Rows) ([]domain.User, 
 	for rows.Next() {
 		var u domain.User
 		if err := rows.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Phone, &u.DivisionID,
-			&u.DivisionName, &u.Role, &u.UnitUsahaID, &u.IsActive, &u.CreatedAt, &u.UpdatedAt); err != nil {
+			&u.DivisionName, &u.Role, &u.UnitUsahaID, &u.PartnerID, &u.IsActive, &u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, err
 		}
 		users = append(users, u)

@@ -1,6 +1,8 @@
 package test
 
 import (
+	m1domain "araya-business-hub/be/internal/modules/m1/domain"
+	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -51,7 +53,9 @@ func TestSecurity_ExpiredToken_Rejected(t *testing.T) {
 
 func TestSecurity_InsufficientPermission_Forbidden(t *testing.T) {
 	r, _ := SetupFullTestApp()
-	staffToken := GenerateToken(5, "staff@araya.com", "staff")
+	staff := &m1domain.User{Email: "staff@araya.com", Name: "Staff", Role: "staff", IsActive: true}
+	_ = testM1.UserRepo.Create(context.Background(), staff)
+	staffToken := GenerateToken(staff.ID, "staff@araya.com", "staff")
 	w := DoReq(r, http.MethodDelete, "/api/m1/v1/users/2", staffToken, nil)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 Forbidden for staff deleting user, got %d", w.Code)

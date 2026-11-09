@@ -66,12 +66,29 @@ func defaultSeedPartners() []domain.Partner {
 }
 
 // SeedInitialPartners seeds default verified and pending partners for development.
+// It is idempotent and also repairs the user <-> partner linkage on existing rows.
 func SeedInitialPartners(ctx context.Context, repo repository.PartnerRepository, prov service.UserProvisioner) error {
-	for _, p := range defaultSeedPartners() {
-		_ = repo.Create(ctx, &p)
-		if p.Status == domain.StatusVerified && prov != nil {
-			_, _ = prov.ProvisionPartner(ctx, p.Email, p.ContactPerson, p.Phone, "Partner123!")
+	for _, seed := range defaultSeedPartners() {
+		existing, err := repo.GetByEmail(ctx, seed.Email)
+		if err != nil {
+			if err := repo.Create(ctx, &seed); err != nil {
+				continue
+			}
+			existing = &seed
 		}
+
+		if existing.Status != domain.StatusVerified || prov == nil {
+			continue
+		}
+		uid, err := prov.ProvisionPartner(ctx, existing.Email, existing.ContactPerson, existing.Phone, "Partner123!")
+		if err != nil || uid <= 0 {
+			continue
+		}
+		if existing.UserID == nil || *existing.UserID != uid {
+			existing.UserID = &uid
+			_ = repo.Update(ctx, existing)
+		}
+		_ = prov.LinkPartnerUser(ctx, uid, existing.ID)
 	}
 	return nil
 }

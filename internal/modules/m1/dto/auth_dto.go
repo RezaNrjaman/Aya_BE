@@ -12,6 +12,7 @@ type UserSummary struct {
 	Role        string   `json:"role"`
 	Division    string   `json:"division"`
 	UnitUsahaID *int     `json:"unit_usaha_id,omitempty"`
+	PartnerID   *int     `json:"partner_id,omitempty"`
 	Permissions []string `json:"permissions"`
 }
 
@@ -32,5 +33,6 @@ type ProfileResponse struct {
 	Role        string   `json:"role"`
 	Division    string   `json:"division"`
 	UnitUsahaID *int     `json:"unit_usaha_id,omitempty"`
+	PartnerID   *int     `json:"partner_id,omitempty"`
 	Permissions []string `json:"permissions"`
 }

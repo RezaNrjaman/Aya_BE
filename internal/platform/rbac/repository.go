@@ -24,7 +24,12 @@ type Repository interface {
 	DeactivateRole(ctx context.Context, roleName string) error
 	AssignPermission(ctx context.Context, roleName, permKey string) error
 	RevokePermission(ctx context.Context, roleName, permKey string) error
+	// SetRolePermissions atomically replaces the full permission set of a role.
+	SetRolePermissions(ctx context.Context, roleName string, permKeys []string) error
 	GetRolePermissions(ctx context.Context, roleName string) ([]string, error)
+	// ListRolePermissionKeys returns the configured keys of a role regardless of
+	// whether the role is active (used by the administration screens).
+	ListRolePermissionKeys(ctx context.Context, roleName string) ([]string, error)
 	AssignUserRole(ctx context.Context, assignment UserRoleAssignment) error
 	GetUserRoleAssignments(ctx context.Context, userID int) ([]UserRoleAssignment, error)
 }
@@ -35,6 +40,7 @@ type InMemoryRepository struct {
 	roles           map[string]Role            // roleName -> Role
 	rolePermissions map[string]map[string]bool // roleName -> set of permission keys
 	userAssignments map[int][]UserRoleAssignment
+	nextRoleID      int
 }
 
 func NewInMemoryRepository() *InMemoryRepository {
@@ -42,6 +48,7 @@ func NewInMemoryRepository() *InMemoryRepository {
 		roles:           make(map[string]Role),
 		rolePermissions: make(map[string]map[string]bool),
 		userAssignments: make(map[int][]UserRoleAssignment),
+		nextRoleID:      1,
 	}
 }
 
@@ -54,6 +61,8 @@ func (m *InMemoryRepository) CreateRole(ctx context.Context, role Role) error {
 	}
 
 	now := time.Now().UTC()
+	role.ID = m.nextRoleID
+	m.nextRoleID++
 	role.CreatedAt = now
 	role.UpdatedAt = now
 	m.roles[role.Name] = role
@@ -148,6 +157,21 @@ func (m *InMemoryRepository) RevokePermission(ctx context.Context, roleName, per
 	return nil
 }
 
+func (m *InMemoryRepository) SetRolePermissions(ctx context.Context, roleName string, permKeys []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.roles[roleName]; !exists {
+		return ErrRoleNotFound
+	}
+	set := make(map[string]bool, len(permKeys))
+	for _, k := range permKeys {
+		set[k] = true
+	}
+	m.rolePermissions[roleName] = set
+	return nil
+}
+
 func (m *InMemoryRepository) GetRolePermissions(ctx context.Context, roleName string) ([]string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -163,6 +187,20 @@ func (m *InMemoryRepository) GetRolePermissions(ctx context.Context, roleName st
 	permsSet := m.rolePermissions[roleName]
 	list := make([]string, 0, len(permsSet))
 	for k := range permsSet {
+		list = append(list, k)
+	}
+	return list, nil
+}
+
+func (m *InMemoryRepository) ListRolePermissionKeys(ctx context.Context, roleName string) ([]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if _, exists := m.roles[roleName]; !exists {
+		return nil, ErrRoleNotFound
+	}
+	list := make([]string, 0, len(m.rolePermissions[roleName]))
+	for k := range m.rolePermissions[roleName] {
 		list = append(list, k)
 	}
 	return list, nil

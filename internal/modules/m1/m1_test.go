@@ -57,7 +57,7 @@ func doReq(r *gin.Engine, method, path, token string, body any) *httptest.Respon
 
 func loginAdmin(r *gin.Engine) string {
 	w := doReq(r, http.MethodPost, "/api/m1/v1/login", "", dto.LoginRequest{
-		Email: "admin@araya.com", Password: "Admin1234!",
+		Email: "admin@araya.com", Password: "Admin123!",
 	})
 	var res response.SuccessResponse
 	_ = json.Unmarshal(w.Body.Bytes(), &res)
@@ -137,7 +137,7 @@ func TestM1_ChangePasswordFlow(t *testing.T) {
 	}
 
 	wOk := doReq(router, http.MethodPatch, "/api/m1/v1/password", token, dto.ChangePasswordRequest{
-		OldPassword: "Admin1234!", NewPassword: "NewSecretPassword123!",
+		OldPassword: "Admin123!", NewPassword: "NewSecretPassword123!",
 	})
 	if wOk.Code != http.StatusOK {
 		t.Fatalf("expected 200 for successful password change, got %d", wOk.Code)

@@ -62,6 +62,18 @@ func (r *InMemoryPartnerRepository) GetByEmail(ctx context.Context, email string
 	return nil, domain.ErrPartnerNotFound
 }
 
+func (r *InMemoryPartnerRepository) GetByUserID(ctx context.Context, userID int) (*domain.Partner, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, p := range r.partners {
+		if p.UserID != nil && *p.UserID == userID {
+			return &p, nil
+		}
+	}
+	return nil, domain.ErrPartnerNotFound
+}
+
 func (r *InMemoryPartnerRepository) Update(ctx context.Context, p *domain.Partner) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

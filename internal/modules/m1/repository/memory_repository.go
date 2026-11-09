@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -97,7 +98,10 @@ func (r *InMemoryUserRepository) UpdatePassword(ctx context.Context, id int, has
 	return nil
 }
 
-func matchesUser(u domain.User, search, div string) bool {
+func matchesUser(u domain.User, search, div string, partnerID *int) bool {
+	if partnerID != nil && (u.PartnerID == nil || *u.PartnerID != *partnerID) {
+		return false
+	}
 	if div != "" && !strings.EqualFold(u.DivisionName, div) {
 		return false
 	}
@@ -108,16 +112,17 @@ func matchesUser(u domain.User, search, div string) bool {
 	return strings.Contains(strings.ToLower(u.Name), s) || strings.Contains(strings.ToLower(u.Email), s)
 }
 
-func (r *InMemoryUserRepository) List(ctx context.Context, search, div string, limit, offset int) ([]domain.User, int, error) {
+func (r *InMemoryUserRepository) List(ctx context.Context, search, div string, partnerID *int, limit, offset int) ([]domain.User, int, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	var filtered []domain.User
 	for _, u := range r.users {
-		if matchesUser(u, search, div) {
+		if matchesUser(u, search, div, partnerID) {
 			filtered = append(filtered, u)
 		}
 	}
+	sort.Slice(filtered, func(a, b int) bool { return filtered[a].ID < filtered[b].ID })
 
 	total := len(filtered)
 	if offset >= total {

@@ -30,6 +30,7 @@ func registerRoleRoutes(rg *gin.RouterGroup, policy *rbac.PolicyService, h *hand
 	rg.PATCH("/:name", middleware.RequirePermission(policy, "m1.roles.manage"), h.UpdateRole)
 	rg.POST("/:name/permissions", middleware.RequirePermission(policy, "m1.roles.manage"), h.AssignPermission)
 	rg.DELETE("/:name/permissions/:key", middleware.RequirePermission(policy, "m1.roles.manage"), h.RevokePermission)
+	rg.PUT("/:name/permissions", middleware.RequirePermission(policy, "m1.roles.manage"), h.SetPermissions)
 }
 
 // RegisterRoutes hooks up all M1 endpoints to the router.

@@ -2,6 +2,7 @@ package rbac
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -92,6 +93,7 @@ func SeedInitialRoles(ctx context.Context, repo Repository) error {
 				IsActive:    true,
 			},
 			Perms: []string{
+				"m1.users.read", "m1.users.create", "m1.users.update", "m1.users.delete",
 				"m2.dashboard.read",
 				"m3.partners.read", "m3.partners.register",
 				"m4.products.read", "m4.products.manage", "m4.customers.manage",
@@ -111,12 +113,30 @@ func SeedInitialRoles(ctx context.Context, repo Repository) error {
 		},
 	}
 
+	// Roles are seeded only into an empty store (fresh install / memory mode).
+	// Once roles exist (e.g. created by SQL migrations or by an administrator),
+	// their configuration is owned by the administrator and never overwritten.
+	existing, err := repo.ListRoles(ctx)
+	if err != nil {
+		return fmt.Errorf("failed listing roles: %w", err)
+	}
+	if len(existing) > 0 {
+		return nil
+	}
 	for _, r := range roles {
-		if err := repo.CreateRole(ctx, r.Role); err != nil && err != ErrDuplicateRole {
+		err := repo.CreateRole(ctx, r.Role)
+		if errors.Is(err, ErrDuplicateRole) {
+			// The role already exists: keep the permissions configured by the
+			// administrator instead of re-adding the defaults on every boot.
+			continue
+		}
+		if err != nil {
 			return fmt.Errorf("failed creating role %s: %w", r.Role.Name, err)
 		}
 		for _, p := range r.Perms {
-			_ = repo.AssignPermission(ctx, r.Role.Name, p)
+			if err := repo.AssignPermission(ctx, r.Role.Name, p); err != nil {
+				return fmt.Errorf("failed assigning %s to role %s: %w", p, r.Role.Name, err)
+			}
 		}
 	}
 

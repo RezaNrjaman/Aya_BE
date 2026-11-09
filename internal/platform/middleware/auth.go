@@ -14,6 +14,7 @@ const (
 	ContextUserRoleKey    = "auth_role"
 	ContextDivisionKey    = "auth_division"
 	ContextUnitUsahaIDKey = "auth_unit_usaha_id"
+	ContextPartnerIDKey   = "auth_partner_id"
 	ContextClaimsKey      = "auth_claims"
 )
 
@@ -54,6 +55,7 @@ func Authenticate(jwtSecret string) gin.HandlerFunc {
 		c.Set(ContextUserRoleKey, claims.Role)
 		c.Set(ContextDivisionKey, claims.Division)
 		c.Set(ContextUnitUsahaIDKey, claims.UnitUsahaID)
+		c.Set(ContextPartnerIDKey, claims.PartnerID)
 		c.Set(ContextClaimsKey, claims)
 
 		c.Next()
@@ -67,6 +69,7 @@ type AuthUser struct {
 	Role        string
 	Division    string
 	UnitUsahaID *int
+	PartnerID   *int
 }
 
 // GetAuthUser extracts authenticated user info from the context.
@@ -82,6 +85,8 @@ func GetAuthUser(c *gin.Context) *AuthUser {
 	division, _ := c.Get(ContextDivisionKey)
 	unitUsahaID, _ := c.Get(ContextUnitUsahaIDKey)
 
+	partnerID, _ := c.Get(ContextPartnerIDKey)
+
 	user := &AuthUser{
 		UserID:   userID,
 		Name:     name.(string),
@@ -92,6 +97,11 @@ func GetAuthUser(c *gin.Context) *AuthUser {
 	if unitUsahaID != nil {
 		if idPtr, ok := unitUsahaID.(*int); ok {
 			user.UnitUsahaID = idPtr
+		}
+	}
+	if partnerID != nil {
+		if idPtr, ok := partnerID.(*int); ok {
+			user.PartnerID = idPtr
 		}
 	}
 

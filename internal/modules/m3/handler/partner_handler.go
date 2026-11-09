@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"strconv"
+	"strings"
 
 	"araya-business-hub/be/internal/modules/m3/domain"
 	"araya-business-hub/be/internal/modules/m3/dto"
@@ -36,6 +37,28 @@ func getActor(c *gin.Context) string {
 	return "system"
 }
 
+// resolveScope returns the partner that the authenticated user is allowed to
+// see. restricted is true for partner accounts and accounts linked to a partner,
+// even when the linkage could not be resolved.
+func (h *PartnerHandler) resolveScope(c *gin.Context) (*int, bool) {
+	u := middleware.GetAuthUser(c)
+	if u == nil {
+		return nil, false
+	}
+	if u.PartnerID != nil {
+		return u.PartnerID, true
+	}
+	if !strings.EqualFold(u.Role, "partner") {
+		return nil, false
+	}
+	// Fallback for tokens issued before partner_id was included in claims.
+	if p, err := h.svc.GetPartnerByUserID(c.Request.Context(), u.UserID); err == nil {
+		id := p.ID
+		return &id, true
+	}
+	return nil, true
+}
+
 func (h *PartnerHandler) Register(c *gin.Context) {
 	var req dto.RegisterPartnerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -60,7 +83,8 @@ func (h *PartnerHandler) GetPartner(c *gin.Context) {
 		response.HandleAppError(c, appErr)
 		return
 	}
-	detail, err := h.svc.GetPartnerDetail(c.Request.Context(), id)
+	scope, restricted := h.resolveScope(c)
+	detail, err := h.svc.GetPartnerDetailScoped(c.Request.Context(), id, scope, restricted)
 	if err != nil {
 		response.HandleAppError(c, response.NotFound("Partner tidak ditemukan"))
 		return
@@ -75,7 +99,8 @@ func (h *PartnerHandler) ListPartners(c *gin.Context) {
 		return
 	}
 	status := c.Query("status")
-	partners, total, err := h.svc.ListPartners(c.Request.Context(), status, p.Search, p.PerPage, p.Offset())
+	scope, restricted := h.resolveScope(c)
+	partners, total, err := h.svc.ListPartnersScoped(c.Request.Context(), scope, restricted, status, p.Search, p.PerPage, p.Offset())
 	if err != nil {
 		response.HandleAppError(c, response.InternalError(err))
 		return
@@ -101,6 +126,11 @@ func (h *PartnerHandler) Verify(c *gin.Context) {
 		response.HandleAppError(c, appErr)
 		return
 	}
+	scope, restricted := h.resolveScope(c)
+	if err := h.svc.EnsurePartnerAccess(c.Request.Context(), id, scope, restricted); err != nil {
+		response.HandleAppError(c, response.NotFound("Partner tidak ditemukan"))
+		return
+	}
 	var req dto.VerifyPartnerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.HandleAppError(c, response.ValidationError("Format data verifikasi tidak valid", nil))
@@ -120,6 +150,11 @@ func (h *PartnerHandler) Suspend(c *gin.Context) {
 		response.HandleAppError(c, appErr)
 		return
 	}
+	scope, restricted := h.resolveScope(c)
+	if err := h.svc.EnsurePartnerAccess(c.Request.Context(), id, scope, restricted); err != nil {
+		response.HandleAppError(c, response.NotFound("Partner tidak ditemukan"))
+		return
+	}
 	var req dto.SuspendPartnerRequest
 	if err := c.ShouldBindJSON(&req); err != nil || req.Reason == "" {
 		response.HandleAppError(c, response.ValidationError("Alasan penangguhan wajib diisi", nil))
@@ -137,6 +172,11 @@ func (h *PartnerHandler) Reactivate(c *gin.Context) {
 	id, appErr := parsePartnerID(c)
 	if appErr != nil {
 		response.HandleAppError(c, appErr)
+		return
+	}
+	scope, restricted := h.resolveScope(c)
+	if err := h.svc.EnsurePartnerAccess(c.Request.Context(), id, scope, restricted); err != nil {
+		response.HandleAppError(c, response.NotFound("Partner tidak ditemukan"))
 		return
 	}
 	partner, err := h.svc.ReactivatePartner(c.Request.Context(), id, getActor(c))

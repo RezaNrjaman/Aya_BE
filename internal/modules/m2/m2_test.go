@@ -1,6 +1,8 @@
 package m2_test
 
 import (
+	m1domain "araya-business-hub/be/internal/modules/m1/domain"
+	m1repo "araya-business-hub/be/internal/modules/m1/repository"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -26,6 +28,21 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
+// Fixture accounts must exist in M1 because authorization resolves the user's
+// current role and status on every request.
+var (
+	managerUserID  int
+	customerUserID int
+)
+
+func seedTestUsers(repo m1repo.UserRepository) {
+	mgr := &m1domain.User{Email: "manager@test.local", Name: "Manager Test", Role: "admin", IsActive: true}
+	_ = repo.Create(context.Background(), mgr)
+	cust := &m1domain.User{Email: "customer@test.local", Name: "Customer Test", Role: "customer", IsActive: true}
+	_ = repo.Create(context.Background(), cust)
+	managerUserID, customerUserID = mgr.ID, cust.ID
+}
+
 func setupTestM2App() (*gin.Engine, *m2.Module) {
 	reg := rbac.NewRegistry()
 	_ = rbac.SeedPlatformPermissions(reg)
@@ -38,7 +55,8 @@ func setupTestM2App() (*gin.Engine, *m2.Module) {
 	router := platformHttp.NewRouter(platformHttp.RouterDependencies{
 		Config: cfg, RBACRegistry: reg, RBACRepo: repo, PolicyService: policy, AuditService: auditSvc,
 	})
-	m1.InitModule(router, testSecret, 8, repo, policy, auditSvc)
+	m1Mod := m1.InitModule(router, testSecret, 8, repo, policy, auditSvc)
+	seedTestUsers(m1Mod.UserRepo)
 	mod := m2.InitModule(router, testSecret, policy, auditSvc)
 	return router, mod
 }
@@ -67,14 +85,14 @@ func getAdminToken() string {
 
 func getScopedToken(unitID int) string {
 	tok, _ := security.GenerateToken(security.PlatformClaims{
-		UserID: 2, Name: "Manager Test", Role: "admin", Division: "operasional", UnitUsahaID: &unitID,
+		UserID: managerUserID, Name: "Manager Test", Role: "admin", Division: "operasional", UnitUsahaID: &unitID,
 	}, testSecret, 8)
 	return tok
 }
 
 func getNoPermToken() string {
 	tok, _ := security.GenerateToken(security.PlatformClaims{
-		UserID: 3, Name: "Customer Test", Role: "customer", Division: "publik",
+		UserID: customerUserID, Name: "Customer Test", Role: "customer", Division: "publik",
 	}, testSecret, 8)
 	return tok
 }

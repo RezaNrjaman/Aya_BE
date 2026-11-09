@@ -32,11 +32,16 @@ func InitModule(r *gin.Engine, secret string, exp int, rRepo rbac.Repository, pS
 	authSvc := service.NewAuthService(uRepo, rRepo, aSvc, secret, exp)
 	userSvc := service.NewUserService(uRepo, rRepo, aSvc)
 	roleSvc := service.NewRoleService(rRepo, pSvc, aSvc)
+	if pSvc != nil {
+		// Authorization follows the user's current role and status (M1 is the
+		// source of truth), so role changes and deactivation apply immediately.
+		pSvc.SetUserResolver(userSvc)
+	}
 	prov := service.NewPartnerProvisioner(uRepo)
 
 	h := Handlers{
 		Auth:  handler.NewAuthHandler(authSvc),
-		User:  handler.NewUserHandler(userSvc),
+		User:  handler.NewUserHandler(userSvc, pSvc),
 		Role:  handler.NewRoleHandler(roleSvc),
 		Audit: handler.NewAuditHandler(aSvc),
 	}
@@ -49,7 +54,7 @@ func InitModule(r *gin.Engine, secret string, exp int, rRepo rbac.Repository, pS
 
 // SeedInitialAdmin seeds the primary administrative account on bootstrap.
 func SeedInitialAdmin(ctx context.Context, uRepo repository.UserRepository) error {
-	hash, _ := domain.HashPassword("Admin1234!")
+	hash, _ := domain.HashPassword("Admin123!")
 	admin := &domain.User{
 		Email:        "admin@araya.com",
 		PasswordHash: hash,
