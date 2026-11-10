@@ -76,11 +76,14 @@ func (r *InMemoryRepository) UpdateProduct(ctx context.Context, p *domain.Produc
 	return nil
 }
 
-func matchesProduct(p domain.Product, unitID *int, category, search string, activeOnly bool) bool {
+func matchesProduct(p domain.Product, unitID *int, category, search string, activeOnly bool, partnerID *int) bool {
 	if activeOnly && !p.IsActive {
 		return false
 	}
 	if unitID != nil && p.UnitUsahaID != *unitID {
+		return false
+	}
+	if partnerID != nil && (p.PartnerID == nil || *p.PartnerID != *partnerID) {
 		return false
 	}
 	if category != "" && !strings.EqualFold(p.Category, category) {
@@ -93,12 +96,12 @@ func matchesProduct(p domain.Product, unitID *int, category, search string, acti
 	return strings.Contains(strings.ToLower(p.Name), s) || strings.Contains(strings.ToLower(p.Description), s)
 }
 
-func (r *InMemoryRepository) ListProducts(ctx context.Context, unitID *int, category, search string, activeOnly bool, limit, offset int) ([]domain.Product, int, error) {
+func (r *InMemoryRepository) ListProducts(ctx context.Context, unitID *int, category, search string, activeOnly bool, partnerID *int, limit, offset int) ([]domain.Product, int, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	res := make([]domain.Product, 0)
 	for _, p := range r.products {
-		if matchesProduct(p, unitID, category, search, activeOnly) {
+		if matchesProduct(p, unitID, category, search, activeOnly, partnerID) {
 			res = append(res, p)
 		}
 	}
@@ -134,12 +137,15 @@ func (r *InMemoryRepository) GetCustomerByID(ctx context.Context, id int) (*doma
 	return &c, nil
 }
 
-func (r *InMemoryRepository) ListCustomers(ctx context.Context, search string, limit, offset int) ([]domain.Customer, int, error) {
+func (r *InMemoryRepository) ListCustomers(ctx context.Context, search string, partnerID *int, limit, offset int) ([]domain.Customer, int, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	res := make([]domain.Customer, 0)
 	s := strings.ToLower(search)
 	for _, c := range r.customers {
+		if partnerID != nil && (c.PartnerID == nil || *c.PartnerID != *partnerID) {
+			continue
+		}
 		if s == "" || strings.Contains(strings.ToLower(c.Name), s) || strings.Contains(strings.ToLower(c.Email), s) {
 			res = append(res, c)
 		}
@@ -189,11 +195,14 @@ func (r *InMemoryRepository) UpdateQuotation(ctx context.Context, q *domain.Quot
 	return nil
 }
 
-func (r *InMemoryRepository) ListQuotations(ctx context.Context, status string, limit, offset int) ([]domain.Quotation, int, error) {
+func (r *InMemoryRepository) ListQuotations(ctx context.Context, status string, partnerID *int, limit, offset int) ([]domain.Quotation, int, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	res := make([]domain.Quotation, 0)
 	for _, q := range r.quotations {
+		if partnerID != nil && (q.PartnerID == nil || *q.PartnerID != *partnerID) {
+			continue
+		}
 		if status == "" || strings.EqualFold(q.Status, status) {
 			res = append(res, q)
 		}
@@ -243,11 +252,14 @@ func (r *InMemoryRepository) UpdateInvoice(ctx context.Context, inv *domain.Invo
 	return nil
 }
 
-func (r *InMemoryRepository) ListInvoices(ctx context.Context, status string, limit, offset int) ([]domain.Invoice, int, error) {
+func (r *InMemoryRepository) ListInvoices(ctx context.Context, status string, partnerID *int, limit, offset int) ([]domain.Invoice, int, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	res := make([]domain.Invoice, 0)
 	for _, inv := range r.invoices {
+		if partnerID != nil && (inv.PartnerID == nil || *inv.PartnerID != *partnerID) {
+			continue
+		}
 		if status == "" || strings.EqualFold(inv.Status, status) {
 			res = append(res, inv)
 		}
@@ -353,11 +365,14 @@ func (r *InMemoryRepository) UpdateOrder(ctx context.Context, o *domain.Order) e
 	return nil
 }
 
-func (r *InMemoryRepository) ListOrders(ctx context.Context, status string, limit, offset int) ([]domain.Order, int, error) {
+func (r *InMemoryRepository) ListOrders(ctx context.Context, status string, partnerID *int, limit, offset int) ([]domain.Order, int, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	res := make([]domain.Order, 0)
 	for _, o := range r.orders {
+		if partnerID != nil && (o.PartnerID == nil || *o.PartnerID != *partnerID) {
+			continue
+		}
 		if status == "" || strings.EqualFold(o.Status, status) {
 			res = append(res, o)
 		}

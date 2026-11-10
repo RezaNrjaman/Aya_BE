@@ -1,6 +1,8 @@
 package m1
 
 import (
+	"time"
+
 	"araya-business-hub/be/internal/modules/m1/handler"
 	"araya-business-hub/be/internal/platform/middleware"
 	"araya-business-hub/be/internal/platform/rbac"
@@ -35,9 +37,13 @@ func registerRoleRoutes(rg *gin.RouterGroup, policy *rbac.PolicyService, h *hand
 
 // RegisterRoutes hooks up all M1 endpoints to the router.
 func RegisterRoutes(r *gin.Engine, jwtSecret string, policy *rbac.PolicyService, h Handlers) {
+	limiter := middleware.NewRateLimiter()
 	m1 := r.Group("/api/m1/v1")
-	m1.POST("/login", h.Auth.Login)
-	m1.POST("/auth/login", h.Auth.Login)
+	// ARY-002: public auth endpoints are rate limited against brute force and
+	// credential/ID enumeration.
+	m1.POST("/login", middleware.RateLimit(limiter, 30, time.Minute), h.Auth.Login)
+	m1.POST("/auth/login", middleware.RateLimit(limiter, 30, time.Minute), h.Auth.Login)
+	m1.POST("/auth/activate", middleware.RateLimit(limiter, 10, time.Minute), h.Auth.ActivateAccount)
 
 	protected := m1.Group("")
 	protected.Use(middleware.Authenticate(jwtSecret))

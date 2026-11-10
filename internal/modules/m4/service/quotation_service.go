@@ -21,7 +21,9 @@ func NewQuotationService(repo repository.Repository, auditSvc *audit.Service) *Q
 }
 
 func formatQuotationNo(id int) string {
-	return fmt.Sprintf("Q-%s-%04d", time.Now().Format("20060102"), id%10000)
+	// Full-ID numbering avoids collisions when two documents are created in
+	// the same period (ARY-011).
+	return fmt.Sprintf("Q-%s-%06d", time.Now().Format("20060102"), id)
 }
 
 func calculateQuotationItems(inputs []dto.QuotationItemInput) ([]domain.QuotationItem, int64) {
@@ -38,33 +40,48 @@ func calculateQuotationItems(inputs []dto.QuotationItemInput) ([]domain.Quotatio
 	return items, total
 }
 
-func (s *QuotationService) CreateQuotation(ctx context.Context, req dto.CreateQuotationRequest, actor string) (*domain.Quotation, error) {
+func (s *QuotationService) CreateQuotation(ctx context.Context, req dto.CreateQuotationRequest, actor string, scope *int) (*domain.Quotation, error) {
 	if len(req.Items) == 0 {
 		return nil, domain.ErrQuotationItemsRequired
 	}
 	items, total := calculateQuotationItems(req.Items)
+	// ARY-001: partner_id is derived from the authenticated actor. Only a
+	// platform-wide actor (super admin) may stamp a specific tenant.
+	partnerID := scope
+	if partnerID == nil {
+		partnerID = req.PartnerID
+	}
 	q := &domain.Quotation{
 		QuotationNo: formatQuotationNo(int(time.Now().UnixNano() % 10000)),
-		UnitUsahaID: req.UnitUsahaID, PartnerID: req.PartnerID, CustomerID: req.CustomerID,
+		UnitUsahaID: req.UnitUsahaID, PartnerID: partnerID, CustomerID: req.CustomerID,
 		TotalAmount: total, Status: domain.QuotationDraft, Items: items,
 	}
 	if err := s.repo.CreateQuotation(ctx, q); err != nil {
 		return nil, err
 	}
 	q.QuotationNo = formatQuotationNo(q.ID)
-	_ = s.repo.UpdateQuotation(ctx, q)
+	if err := s.repo.UpdateQuotation(ctx, q); err != nil {
+		return nil, err
+	}
 	_ = s.auditSvc.Log(ctx, audit.Record{
 		UserName: actor, Action: "quotation.created", EntityType: "quotation", EntityID: fmt.Sprintf("%d", q.ID),
 	})
 	return q, nil
 }
 
-func (s *QuotationService) GetQuotation(ctx context.Context, id int) (*domain.Quotation, error) {
-	return s.repo.GetQuotationByID(ctx, id)
+func (s *QuotationService) GetQuotation(ctx context.Context, id int, scope *int) (*domain.Quotation, error) {
+	q, err := s.repo.GetQuotationByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !canAccessTenant(q.PartnerID, scope) {
+		return nil, domain.ErrQuotationNotFound
+	}
+	return q, nil
 }
 
-func (s *QuotationService) ApproveQuotation(ctx context.Context, id int, actor string) (*domain.Quotation, error) {
-	q, err := s.repo.GetQuotationByID(ctx, id)
+func (s *QuotationService) ApproveQuotation(ctx context.Context, id int, actor string, scope *int) (*domain.Quotation, error) {
+	q, err := s.GetQuotation(ctx, id, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -80,8 +97,8 @@ func (s *QuotationService) ApproveQuotation(ctx context.Context, id int, actor s
 	return q, nil
 }
 
-func (s *QuotationService) RejectQuotation(ctx context.Context, id int, actor string) (*domain.Quotation, error) {
-	q, err := s.repo.GetQuotationByID(ctx, id)
+func (s *QuotationService) RejectQuotation(ctx context.Context, id int, actor string, scope *int) (*domain.Quotation, error) {
+	q, err := s.GetQuotation(ctx, id, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -97,6 +114,6 @@ func (s *QuotationService) RejectQuotation(ctx context.Context, id int, actor st
 	return q, nil
 }
 
-func (s *QuotationService) ListQuotations(ctx context.Context, status string, limit, offset int) ([]domain.Quotation, int, error) {
-	return s.repo.ListQuotations(ctx, status, limit, offset)
+func (s *QuotationService) ListQuotations(ctx context.Context, status string, scope *int, limit, offset int) ([]domain.Quotation, int, error) {
+	return s.repo.ListQuotations(ctx, status, scope, limit, offset)
 }

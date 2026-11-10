@@ -125,4 +125,13 @@ func TestScopePermitted(t *testing.T) {
 	if !policy.IsScopePermitted("admin", &unit3, 5) {
 		t.Errorf("expected admin to have global scope regardless of unit_usaha_id")
 	}
+
+	// ARY-003: a non-admin without a unit assignment is denied rather than
+	// granted implicit global scope.
+	if policy.IsScopePermitted("manajer", nil, 3) {
+		t.Errorf("expected non-admin with nil unit to be denied any unit")
+	}
+	if policy.IsScopePermitted("manajer", nil, 0) {
+		t.Errorf("expected non-admin with nil unit to be denied unit 0 as well")
+	}
 }

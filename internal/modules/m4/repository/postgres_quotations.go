@@ -72,13 +72,14 @@ func (p *PostgresRepository) UpdateQuotation(ctx context.Context, q *domain.Quot
 	return nil
 }
 
-func (p *PostgresRepository) ListQuotations(ctx context.Context, status string, limit, offset int) ([]domain.Quotation, int, error) {
+func (p *PostgresRepository) ListQuotations(ctx context.Context, status string, partnerID *int, limit, offset int) ([]domain.Quotation, int, error) {
 	var total int
-	if err := p.pool.QueryRow(ctx, `SELECT count(*) FROM quotations WHERE $1 = '' OR status = $1`, status).Scan(&total); err != nil {
+	if err := p.pool.QueryRow(ctx, `SELECT count(*) FROM quotations WHERE ($1 = '' OR status = $1) AND ($2::int IS NULL OR partner_id = $2)`, status, partnerID).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	sql := `SELECT id, quotation_no, unit_usaha_id, partner_id, customer_id, total_amount, status, valid_until, created_at, updated_at FROM quotations WHERE $1 = '' OR status = $1 ORDER BY id DESC LIMIT $2 OFFSET $3`
-	rows, err := p.pool.Query(ctx, sql, status, limit, offset)
+	sql := `SELECT id, quotation_no, unit_usaha_id, partner_id, customer_id, total_amount, status, valid_until, created_at, updated_at FROM quotations
+	        WHERE ($1 = '' OR status = $1) AND ($2::int IS NULL OR partner_id = $2) ORDER BY id DESC LIMIT $3 OFFSET $4`
+	rows, err := p.pool.Query(ctx, sql, status, partnerID, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}

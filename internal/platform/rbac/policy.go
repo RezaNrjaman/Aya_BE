@@ -93,7 +93,8 @@ func (p *PolicyService) IsRegistered(permissionKey string) bool {
 }
 
 // IsScopePermitted checks if an action targeting a specific unit_usaha_id is permitted for the user.
-// If userUnitUsahaID is nil, the user has global scope (e.g. administrator).
+// If userUnitUsahaID is nil, the user has no unit assignment: only administrators
+// reach beyond a single unit; every other role is denied (ARY-003).
 // If userUnitUsahaID is not nil, it must match the target targetUnitUsahaID.
 func (p *PolicyService) IsScopePermitted(userRole string, userUnitUsahaID *int, targetUnitUsahaID int) bool {
 	if strings.EqualFold(userRole, "admin") {
@@ -101,7 +102,9 @@ func (p *PolicyService) IsScopePermitted(userRole string, userUnitUsahaID *int, 
 	}
 
 	if userUnitUsahaID == nil {
-		return true
+		// ARY-003: a missing unit assignment must never be treated as global
+		// scope for non-admin roles.
+		return false
 	}
 
 	return *userUnitUsahaID == targetUnitUsahaID

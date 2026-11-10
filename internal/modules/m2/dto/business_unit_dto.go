@@ -1,7 +1,10 @@
 package dto
 
 type CreateUnitRequest struct {
-	Name         string `json:"name" binding:"required"`
+	Name string `json:"name" binding:"required"`
+	// PartnerID is honored only for platform-wide actors (ARY-005); a
+	// partner-scoped actor always owns the unit it creates.
+	PartnerID    *int   `json:"partner_id,omitempty"`
 	CategoryID   *int   `json:"category_id,omitempty"`
 	CategoryName string `json:"category,omitempty"`
 	DivisionID   *int   `json:"division_id,omitempty"`

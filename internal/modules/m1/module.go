@@ -40,7 +40,7 @@ func InitModule(r *gin.Engine, secret string, exp int, rRepo rbac.Repository, pS
 	prov := service.NewPartnerProvisioner(uRepo)
 
 	h := Handlers{
-		Auth:  handler.NewAuthHandler(authSvc),
+		Auth:  handler.NewAuthHandler(authSvc, prov),
 		User:  handler.NewUserHandler(userSvc, pSvc),
 		Role:  handler.NewRoleHandler(roleSvc),
 		Audit: handler.NewAuditHandler(aSvc),

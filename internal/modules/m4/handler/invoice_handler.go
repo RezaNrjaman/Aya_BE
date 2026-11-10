@@ -24,7 +24,7 @@ func (h *InvoiceHandler) CreateInvoice(c *gin.Context) {
 		response.HandleAppError(c, response.ValidationError("Format data tagihan tidak valid", nil))
 		return
 	}
-	invoice, err := h.svc.CreateInvoice(c.Request.Context(), req, getActor(c))
+	invoice, err := h.svc.CreateInvoice(c.Request.Context(), req, getActor(c), mustScope(c))
 	if err != nil {
 		response.HandleAppError(c, response.ValidationError(err.Error(), nil))
 		return
@@ -38,7 +38,7 @@ func (h *InvoiceHandler) GetInvoice(c *gin.Context) {
 		response.HandleAppError(c, appErr)
 		return
 	}
-	inv, err := h.svc.GetInvoice(c.Request.Context(), id)
+	inv, err := h.svc.GetInvoice(c.Request.Context(), id, mustScope(c))
 	if err != nil {
 		response.HandleAppError(c, response.NotFound("Invoice tidak ditemukan"))
 		return
@@ -53,7 +53,7 @@ func (h *InvoiceHandler) ListInvoices(c *gin.Context) {
 		return
 	}
 	status := c.Query("status")
-	list, total, err := h.svc.ListInvoices(c.Request.Context(), status, p.PerPage, p.Offset())
+	list, total, err := h.svc.ListInvoices(c.Request.Context(), status, mustScope(c), p.PerPage, p.Offset())
 	if err != nil {
 		response.HandleAppError(c, response.InternalError(err))
 		return
@@ -72,7 +72,7 @@ func (h *InvoiceHandler) PayInvoice(c *gin.Context) {
 		response.HandleAppError(c, response.ValidationError("Format data pembayaran tidak valid", nil))
 		return
 	}
-	payment, err := h.svc.PayInvoice(c.Request.Context(), id, req, getActor(c))
+	payment, err := h.svc.PayInvoice(c.Request.Context(), id, req, getActor(c), mustScope(c))
 	if err != nil {
 		response.HandleAppError(c, response.ValidationError(err.Error(), nil))
 		return

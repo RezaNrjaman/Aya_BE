@@ -79,8 +79,9 @@ func initModules(r *gin.Engine, cfg *config.Config, rRepo rbac.Repository, pSvc 
 	uR, buR, pR, m4R, m5R := resolveDBRepos(db)
 	m1Mod := m1.InitModule(r, cfg.JWTSecret, cfg.JWTExpirationHours, rRepo, pSvc, aSvc, uR)
 	m2Mod := m2.InitModule(r, cfg.JWTSecret, pSvc, aSvc, buR)
-	m3.InitModule(r, cfg.JWTSecret, pSvc, aSvc, m1Mod.Provisioner, pR)
-	m4Mod := m4.InitModule(r, cfg.JWTSecret, pSvc, aSvc, m4R)
+	m3Mod := m3.InitModule(r, cfg.JWTSecret, pSvc, aSvc, m1Mod.Provisioner, pR)
+	// ARY-004: m3's partner status gates the public storefront in m4.
+	m4Mod := m4.InitModule(r, cfg.JWTSecret, pSvc, aSvc, m3Mod.Svc, m4R)
 
 	m2Cli := m5Client.NewInternalM2Adapter(m2Mod.UnitSvc)
 	m4Cli := m5Client.NewInternalM4Adapter(m4Mod.ProductSvc, m4Mod.OrderSvc)

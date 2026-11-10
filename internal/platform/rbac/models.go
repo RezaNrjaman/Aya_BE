@@ -22,6 +22,20 @@ func NormalizeRoleName(name string) (string, error) {
 	return n, nil
 }
 
+// PartnerRoleSlug builds the globally-unique slug of a partner-owned role
+// (ARY-007): "p<partnerID>_<name>". Authorization is keyed on role names, so
+// two partners may each own "Finance" ("p7_finance" / "p9_finance") without
+// ambiguity. The suffix alone must still follow the role naming rule.
+func PartnerRoleSlug(partnerID int, name string) (string, error) {
+	prefix := fmt.Sprintf("p%d_", partnerID)
+	suffix := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(name)), prefix)
+	limit := 50 - len(prefix)
+	if len(suffix) < 3 || len(suffix) > limit || !roleNamePattern.MatchString(suffix) {
+		return "", ErrInvalidRoleName
+	}
+	return prefix + suffix, nil
+}
+
 // Permission represents a system permission registered by a module.
 type Permission struct {
 	ID          int       `json:"id"`
@@ -57,9 +71,15 @@ func (p *Permission) Validate() error {
 // Role represents a configurable dynamic role in the system.
 type Role struct {
 	ID          int          `json:"id"`
-	Name        string       `json:"name"`         // Unique slug, e.g. "admin", "manajer", "partner", "kasir"
-	DisplayName string       `json:"display_name"` // e.g. "Administrator Sistem"
+	Name        string       `json:"name"`         // Unique slug, e.g. "admin", "manajer", "p7_finance"
+	DisplayName string       `json:"display_name"` // e.g. "Administrator Sistem", "Finance"
 	Description string       `json:"description"`
+	// PartnerID identifies the owning tenant (ARY-007). NULL marks a system
+	// role shared by the whole platform.
+	PartnerID   *int         `json:"partner_id,omitempty"`
+	// IsSystem marks seeded platform roles. They can never be edited,
+	// deactivated, or deleted through the role-management flows.
+	IsSystem    bool         `json:"is_system"`
 	IsActive    bool         `json:"is_active"`
 	Permissions []Permission `json:"permissions,omitempty"`
 	CreatedAt   time.Time    `json:"created_at"`

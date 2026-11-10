@@ -145,6 +145,52 @@ func (r *InMemoryUserRepository) Deactivate(ctx context.Context, id int) error {
 	}
 
 	u.IsActive = false
+	u.IsManuallyDisabled = true
+	u.UpdatedAt = time.Now().UTC()
+	r.users[id] = u
+	return nil
+}
+
+func (r *InMemoryUserRepository) GetByActivationTokenHash(ctx context.Context, tokenHash string) (*domain.User, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, u := range r.users {
+		if u.ActivationTokenHash != "" && u.ActivationTokenHash == tokenHash {
+			return &u, nil
+		}
+	}
+	return nil, domain.ErrUserNotFound
+}
+
+func (r *InMemoryUserRepository) IssueActivationToken(ctx context.Context, id int, tokenHash string, expiresAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	u, exists := r.users[id]
+	if !exists {
+		return domain.ErrUserNotFound
+	}
+	u.ActivationTokenHash = tokenHash
+	u.ActivationExpiresAt = &expiresAt
+	u.UpdatedAt = time.Now().UTC()
+	r.users[id] = u
+	return nil
+}
+
+func (r *InMemoryUserRepository) ActivateAccount(ctx context.Context, id int, passwordHash string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	u, exists := r.users[id]
+	if !exists {
+		return domain.ErrUserNotFound
+	}
+	u.PasswordHash = passwordHash
+	u.ActivationTokenHash = ""
+	u.ActivationExpiresAt = nil
+	u.IsActive = true
+	u.IsManuallyDisabled = false
 	u.UpdatedAt = time.Now().UTC()
 	r.users[id] = u
 	return nil

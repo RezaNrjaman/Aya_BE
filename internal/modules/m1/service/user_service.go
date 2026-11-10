@@ -92,19 +92,19 @@ func (s *UserService) CreateUser(ctx context.Context, req dto.CreateUserRequest,
 	return u, nil
 }
 
-// ensureRoleUsable verifies that a role exists and is active.
-func (s *UserService) ensureRoleUsable(ctx context.Context, roleName string) error {
+// ensureRoleUsable verifies that a role exists and is active, returning it.
+func (s *UserService) ensureRoleUsable(ctx context.Context, roleName string) (*rbac.Role, error) {
 	role, err := s.rbacRepo.GetRole(ctx, roleName)
 	if err != nil {
 		if errors.Is(err, rbac.ErrRoleNotFound) {
-			return ErrRoleUnavailable
+			return nil, ErrRoleUnavailable
 		}
-		return err
+		return nil, err
 	}
 	if !role.IsActive {
-		return ErrRoleUnavailable
+		return nil, ErrRoleUnavailable
 	}
-	return nil
+	return role, nil
 }
 
 // checkRoleChange enforces that only actors with m1.roles.manage can set a
@@ -119,7 +119,8 @@ func (s *UserService) checkRoleChange(ctx context.Context, actor Actor, roleName
 	if roleName == "" {
 		return nil
 	}
-	return s.ensureRoleUsable(ctx, roleName)
+	_, err := s.ensureRoleUsable(ctx, roleName)
+	return err
 }
 
 func (s *UserService) getScopedUser(ctx context.Context, id int, actor Actor) (*domain.User, error) {
@@ -244,11 +245,18 @@ func (s *UserService) AssignRole(ctx context.Context, userID int, req dto.Assign
 	if actor.UserID != 0 && actor.UserID == userID {
 		return ErrSelfAccessChange
 	}
-	if actor.PartnerScoped() && !strings.EqualFold(req.RoleName, "partner") {
-		return fmt.Errorf("mitra hanya dapat menetapkan role partner")
-	}
-	if err := s.ensureRoleUsable(ctx, req.RoleName); err != nil {
+	role, err := s.ensureRoleUsable(ctx, req.RoleName)
+	if err != nil {
 		return err
+	}
+	if actor.PartnerScoped() {
+		// ARY-007: partners may assign the base system role "partner" or a
+		// custom role owned by their own tenant — nothing else.
+		ownsRole := role.PartnerID != nil && actor.PartnerID != nil && *role.PartnerID == *actor.PartnerID
+		isBasePartnerRole := strings.EqualFold(role.Name, "partner")
+		if !ownsRole && !isBasePartnerRole {
+			return fmt.Errorf("mitra hanya dapat menetapkan role partner atau role buatannya sendiri")
+		}
 	}
 	previousRole, previousUnit := u.Role, u.UnitUsahaID
 	u.Role = req.RoleName

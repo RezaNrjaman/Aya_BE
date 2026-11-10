@@ -63,7 +63,7 @@ func setupTestM4App() (*gin.Engine, *m4.Module) {
 	seedTestUsers(m1Mod.UserRepo)
 	m2.InitModule(router, testSecret, policy, auditSvc)
 	m3.InitModule(router, testSecret, policy, auditSvc)
-	mod := m4.InitModule(router, testSecret, policy, auditSvc)
+	mod := m4.InitModule(router, testSecret, policy, auditSvc, nil)
 	return router, mod
 }
 

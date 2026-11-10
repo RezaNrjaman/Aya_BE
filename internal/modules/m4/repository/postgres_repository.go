@@ -55,27 +55,29 @@ func (p *PostgresRepository) UpdateProduct(ctx context.Context, prod *domain.Pro
 	return nil
 }
 
-func (p *PostgresRepository) ListProducts(ctx context.Context, unitID *int, category, search string, activeOnly bool, limit, offset int) ([]domain.Product, int, error) {
+func (p *PostgresRepository) ListProducts(ctx context.Context, unitID *int, category, search string, activeOnly bool, partnerID *int, limit, offset int) ([]domain.Product, int, error) {
 	pat := "%" + strings.TrimSpace(search) + "%"
 	catPat := "%" + strings.TrimSpace(category) + "%"
 	countQ := `SELECT count(*) FROM products
 	           WHERE ($1::int IS NULL OR unit_usaha_id = $1) AND ($2 = '%%' OR category ILIKE $2)
-	             AND ($3 = '%%' OR name ILIKE $3) AND ($4 = FALSE OR is_active = TRUE)`
+	             AND ($3 = '%%' OR name ILIKE $3) AND ($4 = FALSE OR is_active = TRUE)
+	             AND ($5::int IS NULL OR partner_id = $5)`
 	var total int
-	if err := p.pool.QueryRow(ctx, countQ, unitID, catPat, pat, activeOnly).Scan(&total); err != nil {
+	if err := p.pool.QueryRow(ctx, countQ, unitID, catPat, pat, activeOnly, partnerID).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	prods, err := p.queryProducts(ctx, unitID, catPat, pat, activeOnly, limit, offset)
+	prods, err := p.queryProducts(ctx, unitID, catPat, pat, activeOnly, partnerID, limit, offset)
 	return prods, total, err
 }
 
-func (p *PostgresRepository) queryProducts(ctx context.Context, u *int, c, s string, active bool, limit, offset int) ([]domain.Product, error) {
+func (p *PostgresRepository) queryProducts(ctx context.Context, u *int, c, s string, active bool, partnerID *int, limit, offset int) ([]domain.Product, error) {
 	q := `SELECT id, unit_usaha_id, partner_id, name, COALESCE(category, ''), COALESCE(description, ''),
 	             price, stock, is_active, COALESCE(image_url, ''), created_at, updated_at
 	      FROM products WHERE ($1::int IS NULL OR unit_usaha_id = $1) AND ($2 = '%%' OR category ILIKE $2)
 	        AND ($3 = '%%' OR name ILIKE $3) AND ($4 = FALSE OR is_active = TRUE)
-	      ORDER BY id ASC LIMIT $5 OFFSET $6`
-	rows, err := p.pool.Query(ctx, q, u, c, s, active, limit, offset)
+	        AND ($6::int IS NULL OR partner_id = $6)
+	      ORDER BY id ASC LIMIT $5 OFFSET $7`
+	rows, err := p.pool.Query(ctx, q, u, c, s, active, limit, partnerID, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -97,15 +99,15 @@ func (p *PostgresRepository) collectProducts(rows pgx.Rows) ([]domain.Product, e
 }
 
 func (p *PostgresRepository) CreateCustomer(ctx context.Context, c *domain.Customer) error {
-	q := `INSERT INTO customers (name, email, phone, address, created_at, updated_at)
-	      VALUES ($1, $2, $3, $4, NOW(), NOW()) RETURNING id, created_at, updated_at`
-	return p.pool.QueryRow(ctx, q, c.Name, c.Email, c.Phone, c.Address).Scan(&c.ID, &c.CreatedAt, &c.UpdatedAt)
+	q := `INSERT INTO customers (partner_id, name, email, phone, address, created_at, updated_at)
+	      VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) RETURNING id, created_at, updated_at`
+	return p.pool.QueryRow(ctx, q, c.PartnerID, c.Name, c.Email, c.Phone, c.Address).Scan(&c.ID, &c.CreatedAt, &c.UpdatedAt)
 }
 
 func (p *PostgresRepository) GetCustomerByID(ctx context.Context, id int) (*domain.Customer, error) {
-	q := `SELECT id, name, email, COALESCE(phone, ''), COALESCE(address, ''), created_at, updated_at FROM customers WHERE id = $1`
+	q := `SELECT id, partner_id, name, email, COALESCE(phone, ''), COALESCE(address, ''), created_at, updated_at FROM customers WHERE id = $1`
 	var c domain.Customer
-	err := p.pool.QueryRow(ctx, q, id).Scan(&c.ID, &c.Name, &c.Email, &c.Phone, &c.Address, &c.CreatedAt, &c.UpdatedAt)
+	err := p.pool.QueryRow(ctx, q, id).Scan(&c.ID, &c.PartnerID, &c.Name, &c.Email, &c.Phone, &c.Address, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrCustomerNotFound
@@ -115,15 +117,16 @@ func (p *PostgresRepository) GetCustomerByID(ctx context.Context, id int) (*doma
 	return &c, nil
 }
 
-func (p *PostgresRepository) ListCustomers(ctx context.Context, search string, limit, offset int) ([]domain.Customer, int, error) {
+func (p *PostgresRepository) ListCustomers(ctx context.Context, search string, partnerID *int, limit, offset int) ([]domain.Customer, int, error) {
 	pat := "%" + strings.TrimSpace(search) + "%"
 	var total int
-	if err := p.pool.QueryRow(ctx, `SELECT count(*) FROM customers WHERE $1 = '%%' OR name ILIKE $1 OR email ILIKE $1`, pat).Scan(&total); err != nil {
+	if err := p.pool.QueryRow(ctx, `SELECT count(*) FROM customers WHERE ($1 = '%%' OR name ILIKE $1 OR email ILIKE $1) AND ($2::int IS NULL OR partner_id = $2)`, pat, partnerID).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	q := `SELECT id, name, email, COALESCE(phone, ''), COALESCE(address, ''), created_at, updated_at
-	      FROM customers WHERE $1 = '%%' OR name ILIKE $1 OR email ILIKE $1 ORDER BY id ASC LIMIT $2 OFFSET $3`
-	rows, err := p.pool.Query(ctx, q, pat, limit, offset)
+	q := `SELECT id, partner_id, name, email, COALESCE(phone, ''), COALESCE(address, ''), created_at, updated_at
+	      FROM customers WHERE ($1 = '%%' OR name ILIKE $1 OR email ILIKE $1) AND ($2::int IS NULL OR partner_id = $2)
+	      ORDER BY id ASC LIMIT $3 OFFSET $4`
+	rows, err := p.pool.Query(ctx, q, pat, partnerID, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -136,7 +139,7 @@ func (p *PostgresRepository) collectCustomers(rows pgx.Rows) ([]domain.Customer,
 	var custs []domain.Customer
 	for rows.Next() {
 		var c domain.Customer
-		if err := rows.Scan(&c.ID, &c.Name, &c.Email, &c.Phone, &c.Address, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.PartnerID, &c.Name, &c.Email, &c.Phone, &c.Address, &c.CreatedAt, &c.UpdatedAt); err != nil {
 			return nil, err
 		}
 		custs = append(custs, c)

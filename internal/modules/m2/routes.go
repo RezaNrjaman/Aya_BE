@@ -10,6 +10,7 @@ import (
 type Handlers struct {
 	Unit      *handler.UnitHandler
 	Dashboard *handler.DashboardHandler
+	Division  *handler.DivisionHandler
 }
 
 func registerAdminUnitRoutes(rg *gin.RouterGroup, policy *rbac.PolicyService, h *handler.UnitHandler) {
@@ -21,6 +22,17 @@ func registerAdminUnitRoutes(rg *gin.RouterGroup, policy *rbac.PolicyService, h 
 	rg.POST("/business-units/:id/activate", middleware.RequirePermission(policy, "m2.business_units.update"), h.ActivateUnit)
 }
 
+// registerDivisionRoutes exposes partner-owned division CRUD (ARY-006).
+func registerDivisionRoutes(rg *gin.RouterGroup, policy *rbac.PolicyService, h *handler.DivisionHandler) {
+	rg.GET("/divisions", middleware.RequirePermission(policy, "m2.divisions.read"), h.ListDivisions)
+	rg.POST("/divisions", middleware.RequirePermission(policy, "m2.divisions.manage"), h.CreateDivision)
+	rg.GET("/divisions/:id", middleware.RequirePermission(policy, "m2.divisions.read"), h.GetDivision)
+	rg.PATCH("/divisions/:id", middleware.RequirePermission(policy, "m2.divisions.manage"), h.UpdateDivision)
+	rg.POST("/divisions/:id/deactivate", middleware.RequirePermission(policy, "m2.divisions.manage"), h.DeactivateDivision)
+	rg.POST("/divisions/:id/activate", middleware.RequirePermission(policy, "m2.divisions.manage"), h.ActivateDivision)
+	rg.DELETE("/divisions/:id", middleware.RequirePermission(policy, "m2.divisions.manage"), h.DeleteDivision)
+}
+
 // RegisterRoutes registers all M2 routes to Gin.
 func RegisterRoutes(r *gin.Engine, jwtSecret string, policy *rbac.PolicyService, h Handlers) {
 	m2 := r.Group("/api/m2/v1")
@@ -30,6 +42,7 @@ func RegisterRoutes(r *gin.Engine, jwtSecret string, policy *rbac.PolicyService,
 	protected := m2.Group("")
 	protected.Use(middleware.Authenticate(jwtSecret))
 	registerAdminUnitRoutes(protected, policy, h.Unit)
+	registerDivisionRoutes(protected, policy, h.Division)
 	// Contract K-03: Dashboard summary
 	protected.GET("/dashboard-summary", middleware.RequirePermission(policy, "m2.dashboard.read"), h.Dashboard.GetSummary)
 }

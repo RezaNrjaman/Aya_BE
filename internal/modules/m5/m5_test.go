@@ -63,7 +63,7 @@ func setupTestM5App() (*gin.Engine, *m5.Module) {
 	seedTestUsers(m1Mod.UserRepo)
 	m2Mod := m2.InitModule(router, testSecret, policy, auditSvc)
 	m3.InitModule(router, testSecret, policy, auditSvc)
-	m4Mod := m4.InitModule(router, testSecret, policy, auditSvc)
+	m4Mod := m4.InitModule(router, testSecret, policy, auditSvc, nil)
 
 	m2Cli := m5Client.NewInternalM2Adapter(m2Mod.UnitSvc)
 	m4Cli := m5Client.NewInternalM4Adapter(m4Mod.ProductSvc, m4Mod.OrderSvc)

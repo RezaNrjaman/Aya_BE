@@ -22,7 +22,7 @@ func (h *QuotationHandler) CreateQuotation(c *gin.Context) {
 		response.HandleAppError(c, response.ValidationError("Format data penawaran tidak valid", nil))
 		return
 	}
-	quotation, err := h.svc.CreateQuotation(c.Request.Context(), req, getActor(c))
+	quotation, err := h.svc.CreateQuotation(c.Request.Context(), req, getActor(c), mustScope(c))
 	if err != nil {
 		response.HandleAppError(c, response.ValidationError(err.Error(), nil))
 		return
@@ -36,7 +36,7 @@ func (h *QuotationHandler) GetQuotation(c *gin.Context) {
 		response.HandleAppError(c, appErr)
 		return
 	}
-	q, err := h.svc.GetQuotation(c.Request.Context(), id)
+	q, err := h.svc.GetQuotation(c.Request.Context(), id, mustScope(c))
 	if err != nil {
 		response.HandleAppError(c, response.NotFound("Quotation tidak ditemukan"))
 		return
@@ -50,7 +50,7 @@ func (h *QuotationHandler) ApproveQuotation(c *gin.Context) {
 		response.HandleAppError(c, appErr)
 		return
 	}
-	q, err := h.svc.ApproveQuotation(c.Request.Context(), id, getActor(c))
+	q, err := h.svc.ApproveQuotation(c.Request.Context(), id, getActor(c), mustScope(c))
 	if err != nil {
 		response.HandleAppError(c, response.ValidationError(err.Error(), nil))
 		return
@@ -64,7 +64,7 @@ func (h *QuotationHandler) RejectQuotation(c *gin.Context) {
 		response.HandleAppError(c, appErr)
 		return
 	}
-	q, err := h.svc.RejectQuotation(c.Request.Context(), id, getActor(c))
+	q, err := h.svc.RejectQuotation(c.Request.Context(), id, getActor(c), mustScope(c))
 	if err != nil {
 		response.HandleAppError(c, response.ValidationError(err.Error(), nil))
 		return
@@ -79,7 +79,7 @@ func (h *QuotationHandler) ListQuotations(c *gin.Context) {
 		return
 	}
 	status := c.Query("status")
-	list, total, err := h.svc.ListQuotations(c.Request.Context(), status, p.PerPage, p.Offset())
+	list, total, err := h.svc.ListQuotations(c.Request.Context(), status, mustScope(c), p.PerPage, p.Offset())
 	if err != nil {
 		response.HandleAppError(c, response.InternalError(err))
 		return

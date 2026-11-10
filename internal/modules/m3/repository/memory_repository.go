@@ -74,6 +74,22 @@ func (r *InMemoryPartnerRepository) GetByUserID(ctx context.Context, userID int)
 	return nil, domain.ErrPartnerNotFound
 }
 
+func (r *InMemoryPartnerRepository) GetByRegistrationCode(ctx context.Context, code string) (*domain.Partner, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	code = strings.ToLower(strings.TrimSpace(code))
+	if code == "" {
+		return nil, domain.ErrPartnerNotFound
+	}
+	for _, p := range r.partners {
+		if strings.EqualFold(p.RegistrationCode, code) {
+			return &p, nil
+		}
+	}
+	return nil, domain.ErrPartnerNotFound
+}
+
 func (r *InMemoryPartnerRepository) Update(ctx context.Context, p *domain.Partner) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

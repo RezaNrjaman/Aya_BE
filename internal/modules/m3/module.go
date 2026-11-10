@@ -80,7 +80,7 @@ func SeedInitialPartners(ctx context.Context, repo repository.PartnerRepository,
 		if existing.Status != domain.StatusVerified || prov == nil {
 			continue
 		}
-		uid, err := prov.ProvisionPartner(ctx, existing.Email, existing.ContactPerson, existing.Phone, "Partner123!")
+		uid, _, err := prov.ProvisionPartner(ctx, existing.Email, existing.ContactPerson, existing.Phone)
 		if err != nil || uid <= 0 {
 			continue
 		}

@@ -59,6 +59,11 @@ func (s *AuthService) Login(ctx context.Context, req dto.LoginRequest) (*dto.Log
 	if err != nil {
 		return nil, ErrInvalidCredentials
 	}
+	// ARY-002: distinguish accounts that have not finished activation from
+	// wrong-password attempts, without leaking anything extra.
+	if user.NeedsActivation() {
+		return nil, domain.ErrAccountNotActivated
+	}
 	if err := s.verifyUserPassword(user, req.Password); err != nil {
 		return nil, err
 	}

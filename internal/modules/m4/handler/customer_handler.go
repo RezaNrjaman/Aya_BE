@@ -22,7 +22,7 @@ func (h *CustomerHandler) CreateCustomer(c *gin.Context) {
 		response.HandleAppError(c, response.ValidationError("Format data customer tidak valid", nil))
 		return
 	}
-	customer, err := h.svc.CreateCustomer(c.Request.Context(), req)
+	customer, err := h.svc.CreateCustomer(c.Request.Context(), req, mustScope(c))
 	if err != nil {
 		response.HandleAppError(c, response.ValidationError(err.Error(), nil))
 		return
@@ -36,7 +36,7 @@ func (h *CustomerHandler) GetCustomer(c *gin.Context) {
 		response.HandleAppError(c, appErr)
 		return
 	}
-	cust, err := h.svc.GetCustomer(c.Request.Context(), id)
+	cust, err := h.svc.GetCustomer(c.Request.Context(), id, mustScope(c))
 	if err != nil {
 		response.HandleAppError(c, response.NotFound("Customer tidak ditemukan"))
 		return
@@ -50,7 +50,7 @@ func (h *CustomerHandler) ListCustomers(c *gin.Context) {
 		response.HandleAppError(c, appErr)
 		return
 	}
-	customers, total, err := h.svc.ListCustomers(c.Request.Context(), p.Search, p.PerPage, p.Offset())
+	customers, total, err := h.svc.ListCustomers(c.Request.Context(), p.Search, mustScope(c), p.PerPage, p.Offset())
 	if err != nil {
 		response.HandleAppError(c, response.InternalError(err))
 		return

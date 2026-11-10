@@ -9,9 +9,9 @@ import (
 )
 
 func (p *PostgresRepository) CreateInvoice(ctx context.Context, inv *domain.Invoice) error {
-	sql := `INSERT INTO invoices (invoice_no, quotation_id, customer_id, total_amount, status, due_date, paid_at, created_at, updated_at)
-	        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW()) RETURNING id, created_at, updated_at`
-	if err := p.pool.QueryRow(ctx, sql, inv.InvoiceNo, inv.QuotationID, inv.CustomerID, inv.TotalAmount, inv.Status, inv.DueDate, inv.PaidAt).
+	sql := `INSERT INTO invoices (invoice_no, quotation_id, partner_id, customer_id, total_amount, status, due_date, paid_at, created_at, updated_at)
+	        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()) RETURNING id, created_at, updated_at`
+	if err := p.pool.QueryRow(ctx, sql, inv.InvoiceNo, inv.QuotationID, inv.PartnerID, inv.CustomerID, inv.TotalAmount, inv.Status, inv.DueDate, inv.PaidAt).
 		Scan(&inv.ID, &inv.CreatedAt, &inv.UpdatedAt); err != nil {
 		return err
 	}
@@ -30,9 +30,9 @@ func (p *PostgresRepository) insertInvoiceItems(ctx context.Context, invID int, 
 }
 
 func (p *PostgresRepository) GetInvoiceByID(ctx context.Context, id int) (*domain.Invoice, error) {
-	sql := `SELECT id, invoice_no, quotation_id, customer_id, total_amount, status, due_date, paid_at, created_at, updated_at FROM invoices WHERE id = $1`
+	sql := `SELECT id, invoice_no, quotation_id, partner_id, customer_id, total_amount, status, due_date, paid_at, created_at, updated_at FROM invoices WHERE id = $1`
 	var inv domain.Invoice
-	if err := p.pool.QueryRow(ctx, sql, id).Scan(&inv.ID, &inv.InvoiceNo, &inv.QuotationID, &inv.CustomerID, &inv.TotalAmount, &inv.Status, &inv.DueDate, &inv.PaidAt, &inv.CreatedAt, &inv.UpdatedAt); err != nil {
+	if err := p.pool.QueryRow(ctx, sql, id).Scan(&inv.ID, &inv.InvoiceNo, &inv.QuotationID, &inv.PartnerID, &inv.CustomerID, &inv.TotalAmount, &inv.Status, &inv.DueDate, &inv.PaidAt, &inv.CreatedAt, &inv.UpdatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrInvoiceNotFound
 		}
@@ -72,13 +72,14 @@ func (p *PostgresRepository) UpdateInvoice(ctx context.Context, inv *domain.Invo
 	return nil
 }
 
-func (p *PostgresRepository) ListInvoices(ctx context.Context, status string, limit, offset int) ([]domain.Invoice, int, error) {
+func (p *PostgresRepository) ListInvoices(ctx context.Context, status string, partnerID *int, limit, offset int) ([]domain.Invoice, int, error) {
 	var total int
-	if err := p.pool.QueryRow(ctx, `SELECT count(*) FROM invoices WHERE $1 = '' OR status = $1`, status).Scan(&total); err != nil {
+	if err := p.pool.QueryRow(ctx, `SELECT count(*) FROM invoices WHERE ($1 = '' OR status = $1) AND ($2::int IS NULL OR partner_id = $2)`, status, partnerID).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	sql := `SELECT id, invoice_no, quotation_id, customer_id, total_amount, status, due_date, paid_at, created_at, updated_at FROM invoices WHERE $1 = '' OR status = $1 ORDER BY id DESC LIMIT $2 OFFSET $3`
-	rows, err := p.pool.Query(ctx, sql, status, limit, offset)
+	sql := `SELECT id, invoice_no, quotation_id, partner_id, customer_id, total_amount, status, due_date, paid_at, created_at, updated_at FROM invoices
+	        WHERE ($1 = '' OR status = $1) AND ($2::int IS NULL OR partner_id = $2) ORDER BY id DESC LIMIT $3 OFFSET $4`
+	rows, err := p.pool.Query(ctx, sql, status, partnerID, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -91,7 +92,7 @@ func (p *PostgresRepository) scanInvoices(rows pgx.Rows) ([]domain.Invoice, erro
 	var list []domain.Invoice
 	for rows.Next() {
 		var inv domain.Invoice
-		if err := rows.Scan(&inv.ID, &inv.InvoiceNo, &inv.QuotationID, &inv.CustomerID, &inv.TotalAmount, &inv.Status, &inv.DueDate, &inv.PaidAt, &inv.CreatedAt, &inv.UpdatedAt); err != nil {
+		if err := rows.Scan(&inv.ID, &inv.InvoiceNo, &inv.QuotationID, &inv.PartnerID, &inv.CustomerID, &inv.TotalAmount, &inv.Status, &inv.DueDate, &inv.PaidAt, &inv.CreatedAt, &inv.UpdatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, inv)

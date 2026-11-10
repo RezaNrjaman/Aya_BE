@@ -13,13 +13,17 @@ var (
 	ErrRoleInactive      = errors.New("role tidak aktif")
 	ErrDuplicateRole     = errors.New("role dengan nama tersebut sudah ada")
 	ErrAssignmentInvalid = errors.New("assignment user-role tidak valid")
+	ErrSystemRole        = errors.New("role sistem tidak dapat diubah melalui manajemen role")
 )
 
 // Repository defines persistence operations for roles and permissions mapping.
 type Repository interface {
 	CreateRole(ctx context.Context, role Role) error
 	GetRole(ctx context.Context, roleName string) (*Role, error)
-	ListRoles(ctx context.Context) ([]Role, error)
+	// ListRoles returns roles visible to the given tenant scope (ARY-007):
+	// nil returns every role; a partner id returns system roles plus that
+	// partner's own custom roles.
+	ListRoles(ctx context.Context, partnerID *int) ([]Role, error)
 	UpdateRole(ctx context.Context, role Role) error
 	DeactivateRole(ctx context.Context, roleName string) error
 	AssignPermission(ctx context.Context, roleName, permKey string) error
@@ -56,8 +60,17 @@ func (m *InMemoryRepository) CreateRole(ctx context.Context, role Role) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if _, exists := m.roles[role.Name]; exists {
-		return fmt.Errorf("%w: %s", ErrDuplicateRole, role.Name)
+	// ARY-007: uniqueness is per tenant. System roles (NULL partner) count as
+	// tenant 0; two partners may both own a role with the same slug.
+	for _, other := range m.roles {
+		if other.Name != role.Name {
+			continue
+		}
+		sameTenant := (role.PartnerID == nil && other.PartnerID == nil) ||
+			(role.PartnerID != nil && other.PartnerID != nil && *role.PartnerID == *other.PartnerID)
+		if sameTenant {
+			return fmt.Errorf("%w: %s", ErrDuplicateRole, role.Name)
+		}
 	}
 
 	now := time.Now().UTC()
@@ -83,12 +96,18 @@ func (m *InMemoryRepository) GetRole(ctx context.Context, roleName string) (*Rol
 	return &role, nil
 }
 
-func (m *InMemoryRepository) ListRoles(ctx context.Context) ([]Role, error) {
+func (m *InMemoryRepository) ListRoles(ctx context.Context, partnerID *int) ([]Role, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	list := make([]Role, 0, len(m.roles))
 	for _, r := range m.roles {
+		if partnerID != nil {
+			// Tenant-scoped listing: system roles plus the tenant's own roles.
+			if r.PartnerID != nil && *r.PartnerID != *partnerID {
+				continue
+			}
+		}
 		list = append(list, r)
 	}
 	return list, nil

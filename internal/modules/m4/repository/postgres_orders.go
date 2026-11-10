@@ -9,9 +9,9 @@ import (
 )
 
 func (p *PostgresRepository) CreateOrder(ctx context.Context, o *domain.Order) error {
-	sql := `INSERT INTO orders (order_no, customer_id, invoice_id, total_amount, status, idempotency_key, created_at, updated_at)
-	        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW()) RETURNING id, created_at, updated_at`
-	if err := p.pool.QueryRow(ctx, sql, o.OrderNo, o.CustomerID, o.InvoiceID, o.TotalAmount, o.Status, o.IdempotencyKey).
+	sql := `INSERT INTO orders (order_no, partner_id, customer_id, invoice_id, total_amount, status, idempotency_key, created_at, updated_at)
+	        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW()) RETURNING id, created_at, updated_at`
+	if err := p.pool.QueryRow(ctx, sql, o.OrderNo, o.PartnerID, o.CustomerID, o.InvoiceID, o.TotalAmount, o.Status, o.IdempotencyKey).
 		Scan(&o.ID, &o.CreatedAt, &o.UpdatedAt); err != nil {
 		return err
 	}
@@ -30,9 +30,9 @@ func (p *PostgresRepository) insertOrderItems(ctx context.Context, oID int, item
 }
 
 func (p *PostgresRepository) GetOrderByID(ctx context.Context, id int) (*domain.Order, error) {
-	sql := `SELECT id, order_no, customer_id, invoice_id, total_amount, status, COALESCE(idempotency_key, ''), created_at, updated_at FROM orders WHERE id = $1`
+	sql := `SELECT id, order_no, partner_id, customer_id, invoice_id, total_amount, status, COALESCE(idempotency_key, ''), created_at, updated_at FROM orders WHERE id = $1`
 	var o domain.Order
-	if err := p.pool.QueryRow(ctx, sql, id).Scan(&o.ID, &o.OrderNo, &o.CustomerID, &o.InvoiceID, &o.TotalAmount, &o.Status, &o.IdempotencyKey, &o.CreatedAt, &o.UpdatedAt); err != nil {
+	if err := p.pool.QueryRow(ctx, sql, id).Scan(&o.ID, &o.OrderNo, &o.PartnerID, &o.CustomerID, &o.InvoiceID, &o.TotalAmount, &o.Status, &o.IdempotencyKey, &o.CreatedAt, &o.UpdatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrOrderNotFound
 		}
@@ -44,9 +44,9 @@ func (p *PostgresRepository) GetOrderByID(ctx context.Context, id int) (*domain.
 }
 
 func (p *PostgresRepository) GetOrderByIdempotency(ctx context.Context, key string) (*domain.Order, error) {
-	sql := `SELECT id, order_no, customer_id, invoice_id, total_amount, status, idempotency_key, created_at, updated_at FROM orders WHERE idempotency_key = $1`
+	sql := `SELECT id, order_no, partner_id, customer_id, invoice_id, total_amount, status, idempotency_key, created_at, updated_at FROM orders WHERE idempotency_key = $1`
 	var o domain.Order
-	if err := p.pool.QueryRow(ctx, sql, key).Scan(&o.ID, &o.OrderNo, &o.CustomerID, &o.InvoiceID, &o.TotalAmount, &o.Status, &o.IdempotencyKey, &o.CreatedAt, &o.UpdatedAt); err != nil {
+	if err := p.pool.QueryRow(ctx, sql, key).Scan(&o.ID, &o.OrderNo, &o.PartnerID, &o.CustomerID, &o.InvoiceID, &o.TotalAmount, &o.Status, &o.IdempotencyKey, &o.CreatedAt, &o.UpdatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -86,13 +86,14 @@ func (p *PostgresRepository) UpdateOrder(ctx context.Context, o *domain.Order) e
 	return nil
 }
 
-func (p *PostgresRepository) ListOrders(ctx context.Context, status string, limit, offset int) ([]domain.Order, int, error) {
+func (p *PostgresRepository) ListOrders(ctx context.Context, status string, partnerID *int, limit, offset int) ([]domain.Order, int, error) {
 	var total int
-	if err := p.pool.QueryRow(ctx, `SELECT count(*) FROM orders WHERE $1 = '' OR status = $1`, status).Scan(&total); err != nil {
+	if err := p.pool.QueryRow(ctx, `SELECT count(*) FROM orders WHERE ($1 = '' OR status = $1) AND ($2::int IS NULL OR partner_id = $2)`, status, partnerID).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	sql := `SELECT id, order_no, customer_id, invoice_id, total_amount, status, COALESCE(idempotency_key, ''), created_at, updated_at FROM orders WHERE $1 = '' OR status = $1 ORDER BY id DESC LIMIT $2 OFFSET $3`
-	rows, err := p.pool.Query(ctx, sql, status, limit, offset)
+	sql := `SELECT id, order_no, partner_id, customer_id, invoice_id, total_amount, status, COALESCE(idempotency_key, ''), created_at, updated_at FROM orders
+	        WHERE ($1 = '' OR status = $1) AND ($2::int IS NULL OR partner_id = $2) ORDER BY id DESC LIMIT $3 OFFSET $4`
+	rows, err := p.pool.Query(ctx, sql, status, partnerID, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -105,7 +106,7 @@ func (p *PostgresRepository) scanOrders(rows pgx.Rows) ([]domain.Order, error) {
 	var list []domain.Order
 	for rows.Next() {
 		var o domain.Order
-		if err := rows.Scan(&o.ID, &o.OrderNo, &o.CustomerID, &o.InvoiceID, &o.TotalAmount, &o.Status, &o.IdempotencyKey, &o.CreatedAt, &o.UpdatedAt); err != nil {
+		if err := rows.Scan(&o.ID, &o.OrderNo, &o.PartnerID, &o.CustomerID, &o.InvoiceID, &o.TotalAmount, &o.Status, &o.IdempotencyKey, &o.CreatedAt, &o.UpdatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, o)

@@ -23,9 +23,9 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 }
 
 func (p *PostgresRepository) CreateRole(ctx context.Context, role Role) error {
-	q := `INSERT INTO roles (name, display_name, description, is_active, created_at, updated_at)
-	      VALUES ($1, $2, $3, $4, NOW(), NOW()) RETURNING id`
-	err := p.pool.QueryRow(ctx, q, role.Name, role.DisplayName, role.Description, role.IsActive).Scan(&role.ID)
+	q := `INSERT INTO roles (name, display_name, description, partner_id, is_system, is_active, created_at, updated_at)
+	      VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW()) RETURNING id`
+	err := p.pool.QueryRow(ctx, q, role.Name, role.DisplayName, role.Description, role.PartnerID, role.IsSystem, role.IsActive).Scan(&role.ID)
 	if isUniqueViolation(err) {
 		return ErrDuplicateRole
 	}
@@ -33,10 +33,10 @@ func (p *PostgresRepository) CreateRole(ctx context.Context, role Role) error {
 }
 
 func (p *PostgresRepository) GetRole(ctx context.Context, roleName string) (*Role, error) {
-	q := `SELECT id, name, display_name, description, is_active, created_at, updated_at
+	q := `SELECT id, name, display_name, description, partner_id, is_system, is_active, created_at, updated_at
 	      FROM roles WHERE name = $1`
 	var r Role
-	err := p.pool.QueryRow(ctx, q, roleName).Scan(&r.ID, &r.Name, &r.DisplayName, &r.Description, &r.IsActive, &r.CreatedAt, &r.UpdatedAt)
+	err := p.pool.QueryRow(ctx, q, roleName).Scan(&r.ID, &r.Name, &r.DisplayName, &r.Description, &r.PartnerID, &r.IsSystem, &r.IsActive, &r.CreatedAt, &r.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrRoleNotFound
@@ -67,9 +67,12 @@ func (p *PostgresRepository) listRolePermissions(ctx context.Context, roleID int
 	return perms, nil
 }
 
-func (p *PostgresRepository) ListRoles(ctx context.Context) ([]Role, error) {
-	q := `SELECT id, name, display_name, description, is_active, created_at, updated_at FROM roles ORDER BY id ASC`
-	rows, err := p.pool.Query(ctx, q)
+func (p *PostgresRepository) ListRoles(ctx context.Context, partnerID *int) ([]Role, error) {
+	q := `SELECT id, name, display_name, description, partner_id, is_system, is_active, created_at, updated_at
+	      FROM roles
+	      WHERE ($1::INT IS NULL OR partner_id IS NULL OR partner_id = $1)
+	      ORDER BY id ASC`
+	rows, err := p.pool.Query(ctx, q, partnerID)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +80,7 @@ func (p *PostgresRepository) ListRoles(ctx context.Context) ([]Role, error) {
 	var roles []Role
 	for rows.Next() {
 		var r Role
-		if err := rows.Scan(&r.ID, &r.Name, &r.DisplayName, &r.Description, &r.IsActive, &r.CreatedAt, &r.UpdatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.Name, &r.DisplayName, &r.Description, &r.PartnerID, &r.IsSystem, &r.IsActive, &r.CreatedAt, &r.UpdatedAt); err != nil {
 			return nil, err
 		}
 		roles = append(roles, r)

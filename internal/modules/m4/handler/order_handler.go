@@ -37,7 +37,7 @@ func (h *OrderHandler) GetOrder(c *gin.Context) {
 		response.HandleAppError(c, appErr)
 		return
 	}
-	order, err := h.svc.GetOrder(c.Request.Context(), id)
+	order, err := h.svc.GetOrder(c.Request.Context(), id, mustScope(c))
 	if err != nil {
 		response.HandleAppError(c, response.NotFound("Order tidak ditemukan"))
 		return
@@ -52,7 +52,7 @@ func (h *OrderHandler) ListOrders(c *gin.Context) {
 		return
 	}
 	status := c.Query("status")
-	list, total, err := h.svc.ListOrders(c.Request.Context(), status, p.PerPage, p.Offset())
+	list, total, err := h.svc.ListOrders(c.Request.Context(), status, mustScope(c), p.PerPage, p.Offset())
 	if err != nil {
 		response.HandleAppError(c, response.InternalError(err))
 		return
@@ -66,7 +66,7 @@ func (h *OrderHandler) ProcessOrder(c *gin.Context) {
 		response.HandleAppError(c, appErr)
 		return
 	}
-	order, err := h.svc.ProcessOrder(c.Request.Context(), id, getActor(c))
+	order, err := h.svc.ProcessOrder(c.Request.Context(), id, getActor(c), mustScope(c))
 	if err != nil {
 		response.HandleAppError(c, response.ValidationError(err.Error(), nil))
 		return
@@ -80,7 +80,7 @@ func (h *OrderHandler) CompleteOrder(c *gin.Context) {
 		response.HandleAppError(c, appErr)
 		return
 	}
-	order, err := h.svc.CompleteOrder(c.Request.Context(), id, getActor(c))
+	order, err := h.svc.CompleteOrder(c.Request.Context(), id, getActor(c), mustScope(c))
 	if err != nil {
 		response.HandleAppError(c, response.ValidationError(err.Error(), nil))
 		return
@@ -103,7 +103,7 @@ func (h *OrderHandler) CancelOrder(c *gin.Context) {
 	if req.Reason == "" {
 		req.Reason = "Dibatalkan oleh operasional/partner"
 	}
-	order, err := h.svc.CancelOrder(c.Request.Context(), id, req.Reason, getActor(c))
+	order, err := h.svc.CancelOrder(c.Request.Context(), id, req.Reason, getActor(c), mustScope(c))
 	if err != nil {
 		response.HandleAppError(c, response.ValidationError(err.Error(), nil))
 		return

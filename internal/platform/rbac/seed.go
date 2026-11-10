@@ -22,6 +22,8 @@ func SeedPlatformPermissions(registry *Registry) error {
 		{Key: "m2.business_units.read", Module: "m2", Name: "Lihat Unit Usaha", Description: "Melihat profil dan daftar unit usaha", IsActive: true},
 		{Key: "m2.business_units.create", Module: "m2", Name: "Tambah Unit Usaha", Description: "Mendaftarkan unit usaha baru", IsActive: true},
 		{Key: "m2.business_units.update", Module: "m2", Name: "Ubah Unit Usaha", Description: "Memperbarui data dan status unit usaha", IsActive: true},
+		{Key: "m2.divisions.read", Module: "m2", Name: "Lihat Divisi", Description: "Melihat daftar divisi milik tenant", IsActive: true},
+		{Key: "m2.divisions.manage", Module: "m2", Name: "Kelola Divisi", Description: "Membuat, mengubah, dan menonaktifkan divisi", IsActive: true},
 		{Key: "m2.dashboard.read", Module: "m2", Name: "Lihat Dashboard", Description: "Mengakses dashboard operasional dan ringkasan data", IsActive: true},
 
 		// M3 — Partner Management
@@ -66,7 +68,8 @@ func SeedInitialRoles(ctx context.Context, repo Repository) error {
 			Perms: []string{
 				"m1.users.read", "m1.users.create", "m1.users.update", "m1.users.delete",
 				"m1.roles.read", "m1.roles.manage", "m1.audit.read",
-				"m2.business_units.read", "m2.business_units.create", "m2.business_units.update", "m2.dashboard.read",
+				"m2.business_units.read", "m2.business_units.create", "m2.business_units.update",
+				"m2.divisions.read", "m2.divisions.manage", "m2.dashboard.read",
 				"m3.partners.read", "m3.partners.verify", "m3.partners.suspend",
 				"m4.products.read", "m4.products.manage", "m4.customers.manage",
 				"m4.quotations.manage", "m4.invoices.manage", "m4.invoices.pay", "m4.orders.manage",
@@ -95,6 +98,10 @@ func SeedInitialRoles(ctx context.Context, repo Repository) error {
 			Perms: []string{
 				"m1.users.read", "m1.users.create", "m1.users.update", "m1.users.delete",
 				"m2.dashboard.read",
+				// ARY-005: partners manage their own business units.
+				"m2.business_units.read", "m2.business_units.create", "m2.business_units.update",
+				// ARY-006: partners manage their own divisions.
+				"m2.divisions.read", "m2.divisions.manage",
 				"m3.partners.read", "m3.partners.register",
 				"m4.products.read", "m4.products.manage", "m4.customers.manage",
 				"m4.quotations.manage", "m4.invoices.manage", "m4.orders.manage",
@@ -116,7 +123,7 @@ func SeedInitialRoles(ctx context.Context, repo Repository) error {
 	// Roles are seeded only into an empty store (fresh install / memory mode).
 	// Once roles exist (e.g. created by SQL migrations or by an administrator),
 	// their configuration is owned by the administrator and never overwritten.
-	existing, err := repo.ListRoles(ctx)
+	existing, err := repo.ListRoles(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed listing roles: %w", err)
 	}

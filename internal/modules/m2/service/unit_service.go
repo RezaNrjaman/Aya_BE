@@ -19,12 +19,28 @@ func NewUnitService(repo repository.UnitRepository, auditSvc *audit.Service) *Un
 	return &UnitService{repo: repo, auditSvc: auditSvc}
 }
 
-func (s *UnitService) CreateUnit(ctx context.Context, req dto.CreateUnitRequest, actor string) (*domain.BusinessUnit, error) {
+// canAccessTenantUnit mirrors the m4 tenant rule (ARY-001/ARY-005): a scoped
+// actor may only touch resources owned by its own partner.
+func canAccessTenantUnit(unitPartnerID *int, scope *int) bool {
+	if scope == nil {
+		return true
+	}
+	return unitPartnerID != nil && *unitPartnerID == *scope
+}
+
+func (s *UnitService) CreateUnit(ctx context.Context, req dto.CreateUnitRequest, actor string, scope *int) (*domain.BusinessUnit, error) {
 	u := &domain.BusinessUnit{
 		Name: req.Name, CategoryID: req.CategoryID, CategoryName: req.CategoryName,
 		DivisionID: req.DivisionID, DivisionName: req.DivisionName, Description: req.Description,
 		ContactEmail: req.ContactEmail, ContactPhone: req.ContactPhone, Address: req.Address,
 		LogoURL: req.LogoURL, IsActive: true,
+	}
+	if scope != nil {
+		// ARY-005: partner-scoped actors always own their units; a
+		// request-body partner_id is never trusted.
+		u.PartnerID = scope
+	} else {
+		u.PartnerID = req.PartnerID // platform admins may assign a tenant explicitly
 	}
 	if err := u.Validate(); err != nil {
 		return nil, err
@@ -38,12 +54,19 @@ func (s *UnitService) CreateUnit(ctx context.Context, req dto.CreateUnitRequest,
 	return u, nil
 }
 
-func (s *UnitService) GetUnit(ctx context.Context, id int) (*domain.BusinessUnit, error) {
-	return s.repo.GetByID(ctx, id)
+func (s *UnitService) GetUnit(ctx context.Context, id int, scope *int) (*domain.BusinessUnit, error) {
+	u, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !canAccessTenantUnit(u.PartnerID, scope) {
+		return nil, domain.ErrUnitNotFound
+	}
+	return u, nil
 }
 
-func (s *UnitService) ListUnits(ctx context.Context, search, cat string, activeOnly bool, limit, offset int) ([]domain.BusinessUnit, int, error) {
-	return s.repo.List(ctx, search, cat, activeOnly, limit, offset)
+func (s *UnitService) ListUnits(ctx context.Context, search, cat string, activeOnly bool, scope *int, limit, offset int) ([]domain.BusinessUnit, int, error) {
+	return s.repo.List(ctx, search, cat, activeOnly, scope, limit, offset)
 }
 
 func (s *UnitService) ListActiveUnits(ctx context.Context) ([]domain.BusinessUnit, error) {
@@ -91,10 +114,13 @@ func applyUnitFields(u *domain.BusinessUnit, req dto.UpdateUnitRequest) {
 	applyContactFields(u, req)
 }
 
-func (s *UnitService) UpdateUnit(ctx context.Context, id int, req dto.UpdateUnitRequest, actor string) (*domain.BusinessUnit, error) {
+func (s *UnitService) UpdateUnit(ctx context.Context, id int, req dto.UpdateUnitRequest, actor string, scope *int) (*domain.BusinessUnit, error) {
 	u, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	if !canAccessTenantUnit(u.PartnerID, scope) {
+		return nil, domain.ErrUnitNotFound
 	}
 	applyUnitFields(u, req)
 	if err := u.Validate(); err != nil {
@@ -109,7 +135,14 @@ func (s *UnitService) UpdateUnit(ctx context.Context, id int, req dto.UpdateUnit
 	return u, nil
 }
 
-func (s *UnitService) DeactivateUnit(ctx context.Context, id int, actor string) error {
+func (s *UnitService) DeactivateUnit(ctx context.Context, id int, actor string, scope *int) error {
+	u, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !canAccessTenantUnit(u.PartnerID, scope) {
+		return domain.ErrUnitNotFound
+	}
 	if err := s.repo.SetStatus(ctx, id, false); err != nil {
 		return err
 	}
@@ -119,7 +152,14 @@ func (s *UnitService) DeactivateUnit(ctx context.Context, id int, actor string) 
 	return nil
 }
 
-func (s *UnitService) ActivateUnit(ctx context.Context, id int, actor string) error {
+func (s *UnitService) ActivateUnit(ctx context.Context, id int, actor string, scope *int) error {
+	u, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !canAccessTenantUnit(u.PartnerID, scope) {
+		return domain.ErrUnitNotFound
+	}
 	if err := s.repo.SetStatus(ctx, id, true); err != nil {
 		return err
 	}

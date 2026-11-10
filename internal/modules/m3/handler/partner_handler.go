@@ -109,15 +109,25 @@ func (h *PartnerHandler) ListPartners(c *gin.Context) {
 }
 
 func (h *PartnerHandler) ListVerifiedPartners(c *gin.Context) {
-	partners, err := h.svc.ListVerifiedPartners(c.Request.Context())
+	views, err := h.svc.PublicVerifiedPartners(c.Request.Context())
 	if err != nil {
 		response.HandleAppError(c, response.InternalError(err))
 		return
 	}
-	if partners == nil {
-		partners = []domain.Partner{}
+	response.OK(c, views)
+}
+
+// PublicPartnerStatus answers the public registration status page. It is
+// addressed by the unguessable registration code and returns a minimal
+// payload (ARY-002).
+func (h *PartnerHandler) PublicPartnerStatus(c *gin.Context) {
+	code := c.Query("code")
+	detail, err := h.svc.GetPublicStatusByCode(c.Request.Context(), code)
+	if err != nil {
+		response.HandleAppError(c, response.NotFound("Kode pelacakan tidak dikenali"))
+		return
 	}
-	response.OK(c, partners)
+	response.OK(c, detail)
 }
 
 func (h *PartnerHandler) Verify(c *gin.Context) {

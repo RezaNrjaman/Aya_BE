@@ -26,14 +26,18 @@ var (
 )
 
 type Partner struct {
-	ID               int        `json:"id"`
-	UserID           *int       `json:"user_id,omitempty"`
-	CompanyName      string     `json:"company_name"`
-	ContactPerson    string     `json:"contact_person"`
-	Email            string     `json:"email"`
-	Phone            string     `json:"phone"`
-	Address          string     `json:"address,omitempty"`
-	Status           string     `json:"status"`
+	ID               int    `json:"id"`
+	UserID           *int   `json:"user_id,omitempty"`
+	CompanyName      string `json:"company_name"`
+	ContactPerson    string `json:"contact_person"`
+	Email            string `json:"email"`
+	Phone            string `json:"phone"`
+	Address          string `json:"address,omitempty"`
+	Status           string `json:"status"`
+	// RegistrationCode is an unguessable tracking code handed to the registrant
+	// at sign-up. It replaces sequential-ID lookups on the public status page
+	// (ARY-002).
+	RegistrationCode string     `json:"registration_code,omitempty"`
 	RejectionReason  string     `json:"rejection_reason,omitempty"`
 	SuspensionReason string     `json:"suspension_reason,omitempty"`
 	VerifiedAt       *time.Time `json:"verified_at,omitempty"`

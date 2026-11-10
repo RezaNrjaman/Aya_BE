@@ -58,7 +58,9 @@ func (a *InternalM4Adapter) GetActiveProducts(ctx context.Context, unitID *int, 
 }
 
 func (a *InternalM4Adapter) GetProductByID(ctx context.Context, id int) (*dto.ProductSummary, error) {
-	p, err := a.prodSvc.GetProduct(ctx, id)
+	// ARY-004: storefront lookups (cart and checkout) must never resolve
+	// products of suspended or unverified partners.
+	p, err := a.prodSvc.GetPublicProduct(ctx, id)
 	if err != nil {
 		return nil, err
 	}

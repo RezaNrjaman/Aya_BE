@@ -1,6 +1,10 @@
 package handler
 
 import (
+	"context"
+	"errors"
+
+	"araya-business-hub/be/internal/modules/m1/domain"
 	"araya-business-hub/be/internal/modules/m1/dto"
 	"araya-business-hub/be/internal/modules/m1/service"
 	"araya-business-hub/be/internal/platform/middleware"
@@ -8,12 +12,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type AuthHandler struct {
-	authSvc *service.AuthService
+// AccountActivator consumes single-use activation invitation tokens (ARY-002).
+type AccountActivator interface {
+	ActivateAccount(ctx context.Context, token, password string) error
 }
 
-func NewAuthHandler(svc *service.AuthService) *AuthHandler {
-	return &AuthHandler{authSvc: svc}
+type AuthHandler struct {
+	authSvc   *service.AuthService
+	activator AccountActivator
+}
+
+func NewAuthHandler(svc *service.AuthService, activator AccountActivator) *AuthHandler {
+	return &AuthHandler{authSvc: svc, activator: activator}
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
@@ -60,4 +70,28 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 	response.OK(c, gin.H{"message": "Kata sandi berhasil diperbarui"})
+}
+
+// ActivateAccount finishes partner onboarding: the invitation token (delivered
+// out-of-band to the verified contact) is exchanged for a first strong
+// password. ARY-002.
+func (h *AuthHandler) ActivateAccount(c *gin.Context) {
+	var req dto.ActivateAccountRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.HandleAppError(c, response.ValidationError("Token dan kata sandi baru wajib diisi", nil))
+		return
+	}
+	if h.activator == nil {
+		response.HandleAppError(c, response.InternalError(errors.New("aktivasi tidak tersedia")))
+		return
+	}
+	if err := h.activator.ActivateAccount(c.Request.Context(), req.Token, req.Password); err != nil {
+		if errors.Is(err, domain.ErrActivationTokenInvalid) || errors.Is(err, domain.ErrActivationTokenExpired) {
+			response.HandleAppError(c, response.BadRequest(err.Error()))
+			return
+		}
+		response.HandleAppError(c, response.ValidationError(err.Error(), nil))
+		return
+	}
+	response.OK(c, gin.H{"message": "Akun berhasil diaktivasi. Silakan masuk dengan kata sandi baru Anda."})
 }

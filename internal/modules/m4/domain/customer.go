@@ -14,6 +14,9 @@ var (
 
 type Customer struct {
 	ID        int       `json:"id"`
+	// PartnerID is the owning tenant (ARY-001). NULL means a platform-level
+	// contact usable for public guest checkout before attribution.
+	PartnerID *int      `json:"partner_id,omitempty"`
 	Name      string    `json:"name"`
 	Email     string    `json:"email"`
 	Phone     string    `json:"phone,omitempty"`

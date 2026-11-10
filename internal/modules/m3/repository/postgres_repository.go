@@ -19,10 +19,10 @@ func NewPostgresPartnerRepository(pool *pgxpool.Pool) *PostgresPartnerRepository
 }
 
 func (p *PostgresPartnerRepository) Create(ctx context.Context, part *domain.Partner) error {
-	q := `INSERT INTO partners (company_name, contact_person, email, phone, address, status, created_at, updated_at)
-	      VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+	q := `INSERT INTO partners (company_name, contact_person, email, phone, address, status, registration_code, created_at, updated_at)
+	      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
 	      RETURNING id, created_at, updated_at`
-	err := p.pool.QueryRow(ctx, q, part.CompanyName, part.ContactPerson, part.Email, part.Phone, part.Address, part.Status).
+	err := p.pool.QueryRow(ctx, q, part.CompanyName, part.ContactPerson, part.Email, part.Phone, part.Address, part.Status, part.RegistrationCode).
 		Scan(&part.ID, &part.CreatedAt, &part.UpdatedAt)
 	if err != nil && strings.Contains(err.Error(), "duplicate key") {
 		return domain.ErrEmailAlreadyRegistered
@@ -30,26 +30,25 @@ func (p *PostgresPartnerRepository) Create(ctx context.Context, part *domain.Par
 	return err
 }
 
-func (p *PostgresPartnerRepository) GetByID(ctx context.Context, id int) (*domain.Partner, error) {
-	q := `SELECT p.id, p.user_id, p.company_name, p.contact_person, p.email, p.phone, COALESCE(p.address, ''),
+// partnerSelect is the shared column list for partner scans.
+const partnerSelect = `p.id, p.user_id, p.company_name, p.contact_person, p.email, p.phone, COALESCE(p.address, ''),
 	             p.status, COALESCE(p.rejection_reason, ''), COALESCE(p.suspension_reason, ''),
-	             p.verified_at, COALESCE(u.name, ''), p.created_at, p.updated_at
+	             p.verified_at, COALESCE(u.name, ''), COALESCE(p.registration_code, ''), p.created_at, p.updated_at`
+
+func (p *PostgresPartnerRepository) GetByID(ctx context.Context, id int) (*domain.Partner, error) {
+	q := `SELECT ` + partnerSelect + `
 	      FROM partners p LEFT JOIN users u ON p.verified_by = u.id WHERE p.id = $1`
 	return p.scanPartner(p.pool.QueryRow(ctx, q, id))
 }
 
 func (p *PostgresPartnerRepository) GetByEmail(ctx context.Context, email string) (*domain.Partner, error) {
-	q := `SELECT p.id, p.user_id, p.company_name, p.contact_person, p.email, p.phone, COALESCE(p.address, ''),
-	             p.status, COALESCE(p.rejection_reason, ''), COALESCE(p.suspension_reason, ''),
-	             p.verified_at, COALESCE(u.name, ''), p.created_at, p.updated_at
+	q := `SELECT ` + partnerSelect + `
 	      FROM partners p LEFT JOIN users u ON p.verified_by = u.id WHERE LOWER(p.email) = LOWER($1)`
 	return p.scanPartner(p.pool.QueryRow(ctx, q, email))
 }
 
 func (p *PostgresPartnerRepository) GetByUserID(ctx context.Context, userID int) (*domain.Partner, error) {
-	q := `SELECT p.id, p.user_id, p.company_name, p.contact_person, p.email, p.phone, COALESCE(p.address, ''),
-	             p.status, COALESCE(p.rejection_reason, ''), COALESCE(p.suspension_reason, ''),
-	             p.verified_at, COALESCE(v.name, ''), p.created_at, p.updated_at
+	q := `SELECT ` + partnerSelect + `
 	      FROM partners p
 	      LEFT JOIN users v ON p.verified_by = v.id
 	      WHERE p.user_id = $1
@@ -58,11 +57,21 @@ func (p *PostgresPartnerRepository) GetByUserID(ctx context.Context, userID int)
 	return p.scanPartner(p.pool.QueryRow(ctx, q, userID))
 }
 
+func (p *PostgresPartnerRepository) GetByRegistrationCode(ctx context.Context, code string) (*domain.Partner, error) {
+	code = strings.ToLower(strings.TrimSpace(code))
+	if code == "" {
+		return nil, domain.ErrPartnerNotFound
+	}
+	q := `SELECT ` + partnerSelect + `
+	      FROM partners p LEFT JOIN users u ON p.verified_by = u.id WHERE LOWER(p.registration_code) = LOWER($1)`
+	return p.scanPartner(p.pool.QueryRow(ctx, q, code))
+}
+
 func (p *PostgresPartnerRepository) scanPartner(row pgx.Row) (*domain.Partner, error) {
 	var part domain.Partner
 	err := row.Scan(&part.ID, &part.UserID, &part.CompanyName, &part.ContactPerson, &part.Email, &part.Phone,
 		&part.Address, &part.Status, &part.RejectionReason, &part.SuspensionReason, &part.VerifiedAt,
-		&part.VerifiedBy, &part.CreatedAt, &part.UpdatedAt)
+		&part.VerifiedBy, &part.RegistrationCode, &part.CreatedAt, &part.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrPartnerNotFound
@@ -101,9 +110,7 @@ func (p *PostgresPartnerRepository) List(ctx context.Context, status, search str
 }
 
 func (p *PostgresPartnerRepository) queryPartnerList(ctx context.Context, status, s string, limit, offset int) ([]domain.Partner, error) {
-	q := `SELECT p.id, p.user_id, p.company_name, p.contact_person, p.email, p.phone, COALESCE(p.address, ''),
-	             p.status, COALESCE(p.rejection_reason, ''), COALESCE(p.suspension_reason, ''),
-	             p.verified_at, COALESCE(u.name, ''), p.created_at, p.updated_at
+	q := `SELECT ` + partnerSelect + `
 	      FROM partners p LEFT JOIN users u ON p.verified_by = u.id
 	      WHERE ($1 = '' OR p.status = $1) AND ($2 = '%%' OR p.company_name ILIKE $2 OR p.contact_person ILIKE $2 OR p.email ILIKE $2)
 	      ORDER BY p.id ASC LIMIT $3 OFFSET $4`
@@ -116,9 +123,7 @@ func (p *PostgresPartnerRepository) queryPartnerList(ctx context.Context, status
 }
 
 func (p *PostgresPartnerRepository) ListVerified(ctx context.Context) ([]domain.Partner, error) {
-	q := `SELECT p.id, p.user_id, p.company_name, p.contact_person, p.email, p.phone, COALESCE(p.address, ''),
-	             p.status, COALESCE(p.rejection_reason, ''), COALESCE(p.suspension_reason, ''),
-	             p.verified_at, COALESCE(u.name, ''), p.created_at, p.updated_at
+	q := `SELECT ` + partnerSelect + `
 	      FROM partners p LEFT JOIN users u ON p.verified_by = u.id
 	      WHERE p.status = 'terverifikasi' ORDER BY p.company_name ASC`
 	rows, err := p.pool.Query(ctx, q)
@@ -135,7 +140,7 @@ func (p *PostgresPartnerRepository) collectRows(rows pgx.Rows) ([]domain.Partner
 		var part domain.Partner
 		if err := rows.Scan(&part.ID, &part.UserID, &part.CompanyName, &part.ContactPerson, &part.Email, &part.Phone,
 			&part.Address, &part.Status, &part.RejectionReason, &part.SuspensionReason, &part.VerifiedAt,
-			&part.VerifiedBy, &part.CreatedAt, &part.UpdatedAt); err != nil {
+			&part.VerifiedBy, &part.RegistrationCode, &part.CreatedAt, &part.UpdatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, part)

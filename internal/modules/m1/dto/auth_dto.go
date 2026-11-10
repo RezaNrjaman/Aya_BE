@@ -26,6 +26,13 @@ type ChangePasswordRequest struct {
 	NewPassword string `json:"new_password" binding:"required"`
 }
 
+// ActivateAccountRequest consumes the single-use invitation token and sets the
+// account's first password (ARY-002).
+type ActivateAccountRequest struct {
+	Token    string `json:"token" binding:"required"`
+	Password string `json:"password" binding:"required"`
+}
+
 type ProfileResponse struct {
 	ID          int      `json:"id"`
 	Email       string   `json:"email"`

@@ -33,6 +33,8 @@ func InitModule(r *gin.Engine, secret string, policy *rbac.PolicyService, auditS
 	h := Handlers{
 		Unit:      handler.NewUnitHandler(unitSvc),
 		Dashboard: handler.NewDashboardHandler(dashSvc),
+		// Both concrete repositories implement DivisionRepository (ARY-006).
+		Division: handler.NewDivisionHandler(service.NewDivisionService(repo.(repository.DivisionRepository), auditSvc)),
 	}
 	RegisterRoutes(r, secret, policy, h)
 	_ = SeedInitialUnits(context.Background(), repo)

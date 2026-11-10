@@ -29,6 +29,9 @@ type CreateRoleRequest struct {
 	DisplayName    string   `json:"display_name" binding:"required"`
 	Description    string   `json:"description,omitempty"`
 	PermissionKeys []string `json:"permission_keys,omitempty"`
+	// PartnerID is honored only for platform-wide actors (ARY-007); partner
+	// actors always own the roles they create.
+	PartnerID *int `json:"partner_id,omitempty"`
 }
 
 type UpdateRoleRequest struct {

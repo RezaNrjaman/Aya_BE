@@ -21,7 +21,7 @@ func NewRoleHandler(svc *service.RoleService) *RoleHandler {
 
 func getRoleActor(c *gin.Context) service.RoleActor {
 	if u := middleware.GetAuthUser(c); u != nil {
-		return service.RoleActor{Name: u.Name, Role: u.Role}
+		return service.RoleActor{Name: u.Name, Role: u.Role, PartnerID: u.PartnerID}
 	}
 	return service.RoleActor{Name: "system"}
 }
@@ -33,7 +33,8 @@ func roleError(err error) *response.AppError {
 		return response.NotFound("Role tidak ditemukan")
 	case errors.Is(err, rbac.ErrDuplicateRole):
 		return response.Conflict("Kode role sudah digunakan")
-	case errors.Is(err, service.ErrAccessLockout):
+	case errors.Is(err, service.ErrAccessLockout), errors.Is(err, service.ErrPlatformRolesOnly),
+		errors.Is(err, service.ErrDelegationForbidden), errors.Is(err, rbac.ErrSystemRole):
 		return response.Forbidden(err.Error())
 	case errors.Is(err, rbac.ErrRoleInactive):
 		return response.ValidationError("Role tidak aktif; aktifkan role terlebih dahulu", nil)
@@ -49,7 +50,7 @@ func roleError(err error) *response.AppError {
 }
 
 func (h *RoleHandler) ListRoles(c *gin.Context) {
-	roles, err := h.roleSvc.ListRoles(c.Request.Context())
+	roles, err := h.roleSvc.ListRoles(c.Request.Context(), getRoleActor(c))
 	if err != nil {
 		response.HandleAppError(c, response.InternalError(err))
 		return

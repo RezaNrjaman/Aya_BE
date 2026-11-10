@@ -26,10 +26,12 @@ func resolveM4Repo(opts ...repository.Repository) repository.Repository {
 	return repository.NewInMemoryRepository()
 }
 
-func InitModule(r *gin.Engine, secret string, policy *rbac.PolicyService, auditSvc *audit.Service, repoOpt ...repository.Repository) *Module {
+// InitModule wires module m4. partnerStatus (ARY-004) may be nil in tests
+// that do not exercise the storefront visibility rules.
+func InitModule(r *gin.Engine, secret string, policy *rbac.PolicyService, auditSvc *audit.Service, partnerStatus service.PartnerStatusResolver, repoOpt ...repository.Repository) *Module {
 	repo := resolveM4Repo(repoOpt...)
 	adapter := payment.NewSandboxAdapter("")
-	prodSvc := service.NewProductService(repo, auditSvc)
+	prodSvc := service.NewProductService(repo, auditSvc, partnerStatus)
 	custSvc := service.NewCustomerService(repo)
 	quotSvc := service.NewQuotationService(repo, auditSvc)
 	invSvc := service.NewInvoiceService(repo, adapter, auditSvc)
