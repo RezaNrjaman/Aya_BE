@@ -1,10 +1,5 @@
 {
-  "version": 2,
-  "functions": {
-    "api/index.go": {
-      "maxDuration": 60
-    }
-  },
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
       "source": "/(.*)",
