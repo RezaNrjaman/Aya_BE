@@ -63,6 +63,15 @@ func registerHealthRoutes(router *gin.Engine, deps RouterDependencies) {
 }
 
 func registerRootHealth(router *gin.Engine) {
+	router.GET("/", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"success":    true,
+			"service":    "araya-business-hub-api",
+			"status":     "running",
+			"health":     "/health",
+			"api_health": "/api/v1/health",
+		})
+	})
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"status": "ok",
