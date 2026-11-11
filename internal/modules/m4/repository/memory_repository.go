@@ -96,6 +96,12 @@ func matchesProduct(p domain.Product, unitID *int, category, search string, acti
 	return strings.Contains(strings.ToLower(p.Name), s) || strings.Contains(strings.ToLower(p.Description), s)
 }
 
+func (r *InMemoryRepository) ValidateUnitOwnership(ctx context.Context, unitID int, partnerID *int) error {
+	// The in-memory M4 fixture does not own M2 unit records. PostgreSQL is the
+	// authoritative production validator; service tests exercise scope on IDs.
+	return nil
+}
+
 func (r *InMemoryRepository) ListProducts(ctx context.Context, unitID *int, category, search string, activeOnly bool, partnerID *int, limit, offset int) ([]domain.Product, int, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -135,6 +141,25 @@ func (r *InMemoryRepository) GetCustomerByID(ctx context.Context, id int) (*doma
 		return nil, domain.ErrCustomerNotFound
 	}
 	return &c, nil
+}
+
+func (r *InMemoryRepository) GetCustomerByEmail(ctx context.Context, email string, partnerID *int) (*domain.Customer, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, customer := range r.customers {
+		if !strings.EqualFold(strings.TrimSpace(customer.Email), strings.TrimSpace(email)) {
+			continue
+		}
+		if partnerID == nil && customer.PartnerID != nil {
+			continue
+		}
+		if partnerID != nil && (customer.PartnerID == nil || *customer.PartnerID != *partnerID) {
+			continue
+		}
+		copy := customer
+		return &copy, nil
+	}
+	return nil, domain.ErrCustomerNotFound
 }
 
 func (r *InMemoryRepository) ListCustomers(ctx context.Context, search string, partnerID *int, limit, offset int) ([]domain.Customer, int, error) {
@@ -328,6 +353,35 @@ func (r *InMemoryRepository) CreateOrder(ctx context.Context, o *domain.Order) e
 	return nil
 }
 
+func (r *InMemoryRepository) CreateOrderWithInvoice(ctx context.Context, o *domain.Order, inv *domain.Invoice) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, item := range o.Items {
+		prod, ok := r.products[item.ProductID]
+		if !ok || !prod.IsActive {
+			return domain.ErrProductNotFound
+		}
+		if prod.ProductType != "jasa" {
+			if prod.Stock < item.Quantity {
+				return errors.New("stok produk tidak mencukupi")
+			}
+			prod.Stock -= item.Quantity
+			r.products[prod.ID] = prod
+		}
+	}
+	now := time.Now().UTC()
+	o.ID = r.nextOrdID
+	r.nextOrdID++
+	o.CreatedAt, o.UpdatedAt = now, now
+	inv.ID = r.nextInvID
+	r.nextInvID++
+	inv.CreatedAt, inv.UpdatedAt = now, now
+	o.InvoiceID = &inv.ID
+	r.orders[o.ID] = *o
+	r.invoices[inv.ID] = *inv
+	return nil
+}
+
 func (r *InMemoryRepository) GetOrderByID(ctx context.Context, id int) (*domain.Order, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -338,18 +392,33 @@ func (r *InMemoryRepository) GetOrderByID(ctx context.Context, id int) (*domain.
 	return &o, nil
 }
 
+func (r *InMemoryRepository) GetOrderByOrderNoAndEmail(ctx context.Context, orderNo, email string) (*domain.Order, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, o := range r.orders {
+		if o.OrderNo != orderNo {
+			continue
+		}
+		customer, ok := r.customers[o.CustomerID]
+		if ok && strings.EqualFold(strings.TrimSpace(customer.Email), strings.TrimSpace(email)) {
+			return &o, nil
+		}
+	}
+	return nil, domain.ErrOrderNotFound
+}
+
 func (r *InMemoryRepository) GetOrderByIdempotency(ctx context.Context, key string) (*domain.Order, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if key == "" {
-		return nil, domain.ErrOrderNotFound
+		return nil, nil
 	}
 	for _, o := range r.orders {
 		if o.IdempotencyKey == key {
 			return &o, nil
 		}
 	}
-	return nil, domain.ErrOrderNotFound
+	return nil, nil
 }
 
 func (r *InMemoryRepository) UpdateOrder(ctx context.Context, o *domain.Order) error {

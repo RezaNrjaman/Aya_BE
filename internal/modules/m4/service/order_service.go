@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"araya-business-hub/be/internal/modules/m4/domain"
@@ -33,34 +34,96 @@ func (s *OrderService) resolveOrderItems(ctx context.Context, inputs []dto.Order
 	items := make([]domain.OrderItem, 0, len(inputs))
 	var total int64
 	var partnerID *int
+	sellerKey := ""
 	for _, it := range inputs {
+		if it.Quantity <= 0 {
+			return nil, 0, nil, errors.New("kuantitas produk harus lebih dari nol")
+		}
 		p, err := s.repo.GetProductByID(ctx, it.ProductID)
 		if err != nil || !p.IsActive {
 			return nil, 0, nil, errors.New("produk tidak ditemukan atau sedang tidak aktif")
 		}
-		// ARY-013/ARY-001: revenue must never be mixed across tenants — all
-		// items of one order must belong to the same partner.
+		if p.ProductType != "jasa" && it.Quantity > p.Stock {
+			return nil, 0, nil, fmt.Errorf("stok produk %s tidak mencukupi", p.Name)
+		}
+		currentSeller := "platform"
 		if p.PartnerID != nil {
-			if partnerID == nil {
-				partnerID = p.PartnerID
-			} else if *partnerID != *p.PartnerID {
-				return nil, 0, nil, errors.New("keranjang berisi produk dari penjual berbeda; silakan checkout terpisah")
+			currentSeller = fmt.Sprintf("partner:%d", *p.PartnerID)
+		}
+		if sellerKey == "" {
+			sellerKey = currentSeller
+			if p.PartnerID != nil {
+				id := *p.PartnerID
+				partnerID = &id
 			}
+		} else if currentSeller != sellerKey {
+			return nil, 0, nil, errors.New("keranjang berisi produk dari penjual berbeda; silakan checkout terpisah")
 		}
 		sub := int64(it.Quantity) * p.Price
 		total += sub
 		items = append(items, domain.OrderItem{
-			ProductID: it.ProductID, ItemName: p.Name,
+			ProductID: p.ID, ItemName: p.Name,
 			Quantity: it.Quantity, UnitPrice: p.Price, Subtotal: sub,
 		})
 	}
 	return items, total, partnerID, nil
 }
 
+func (s *OrderService) resolveCustomer(ctx context.Context, req dto.CreateOrderRequest, partnerID *int) (int, error) {
+	if req.CustomerID > 0 {
+		customer, err := s.repo.GetCustomerByID(ctx, req.CustomerID)
+		if err != nil {
+			return 0, err
+		}
+		if (partnerID == nil && customer.PartnerID != nil) ||
+			(partnerID != nil && (customer.PartnerID == nil || *customer.PartnerID != *partnerID)) {
+			return 0, domain.ErrCustomerNotFound
+		}
+		return customer.ID, nil
+	}
+
+	customer := &domain.Customer{
+		PartnerID: partnerID,
+		Name:      strings.TrimSpace(req.CustomerName),
+		Email:     strings.ToLower(strings.TrimSpace(req.CustomerEmail)),
+		Phone:     strings.TrimSpace(req.CustomerPhone),
+		Address:   strings.TrimSpace(req.CustomerAddress),
+	}
+	if err := customer.Validate(); err != nil {
+		return 0, err
+	}
+	if !strings.Contains(customer.Email, "@") || !strings.Contains(customer.Email, ".") {
+		return 0, errors.New("format email pelanggan tidak valid")
+	}
+	existing, err := s.repo.GetCustomerByEmail(ctx, customer.Email, partnerID)
+	if err == nil {
+		return existing.ID, nil
+	}
+	if !errors.Is(err, domain.ErrCustomerNotFound) {
+		return 0, err
+	}
+	if err := s.repo.CreateCustomer(ctx, customer); err != nil {
+		return 0, err
+	}
+	return customer.ID, nil
+}
+
 // CreateOrder serves Kontrak K-04: POST /api/m4/v1/orders with idempotency support
-func (s *OrderService) CreateOrder(ctx context.Context, req dto.CreateOrderRequest, actor string) (*domain.Order, error) {
+func (s *OrderService) CreateOrder(ctx context.Context, req dto.CreateOrderRequest, actor string, scope *int) (*domain.Order, error) {
+	if strings.TrimSpace(req.IdempotencyKey) == "" {
+		req.IdempotencyKey = fmt.Sprintf("order-%d", time.Now().UnixNano())
+	}
 	if req.IdempotencyKey != "" {
-		if existing, err := s.repo.GetOrderByIdempotency(ctx, req.IdempotencyKey); err == nil && existing != nil {
+		existing, err := s.repo.GetOrderByIdempotency(ctx, req.IdempotencyKey)
+		if err != nil {
+			return nil, err
+		}
+		if existing != nil {
+			if existing.InvoiceID == nil {
+				if err := s.ensureOrderInvoice(ctx, existing); err != nil {
+					return nil, err
+				}
+			}
 			return existing, nil
 		}
 	}
@@ -68,17 +131,36 @@ func (s *OrderService) CreateOrder(ctx context.Context, req dto.CreateOrderReque
 	if err != nil {
 		return nil, err
 	}
+	if scope != nil && (partnerID == nil || *partnerID != *scope) {
+		return nil, errors.New("order hanya dapat dibuat dari produk milik perusahaan Anda")
+	}
+	customerID, err := s.resolveCustomer(ctx, req, partnerID)
+	if err != nil {
+		return nil, err
+	}
 	o := &domain.Order{
-		OrderNo:    formatOrderNo(int(time.Now().UnixNano() % 10000)),
-		PartnerID:  partnerID, // ARY-001: derived from the products, not the request.
-		CustomerID: req.CustomerID, TotalAmount: total, Status: domain.OrderNew,
+		OrderNo:    fmt.Sprintf("TMP-ORD-%d", time.Now().UnixNano()),
+		PartnerID:  partnerID,
+		CustomerID: customerID, TotalAmount: total, Status: domain.OrderNew,
 		IdempotencyKey: req.IdempotencyKey, Items: items,
 	}
-	// ARY-011: never report success when persistence failed.
-	if err := s.repo.CreateOrder(ctx, o); err != nil {
+	invoiceItems := make([]domain.InvoiceItem, 0, len(items))
+	for _, item := range items {
+		pid := item.ProductID
+		invoiceItems = append(invoiceItems, domain.InvoiceItem{ProductID: &pid, ItemName: item.ItemName,
+			Quantity: item.Quantity, UnitPrice: item.UnitPrice, Subtotal: item.Subtotal})
+	}
+	inv := &domain.Invoice{InvoiceNo: formatInvoiceNo(int(time.Now().UnixNano() % 10000)),
+		PartnerID: partnerID, CustomerID: customerID, TotalAmount: total,
+		Status: domain.InvoiceUnpaid, Items: invoiceItems}
+	if err := s.repo.CreateOrderWithInvoice(ctx, o, inv); err != nil {
 		return nil, err
 	}
 	o.OrderNo = formatOrderNo(o.ID)
+	inv.InvoiceNo = formatInvoiceNo(inv.ID)
+	if err := s.repo.UpdateInvoice(ctx, inv); err != nil {
+		return nil, err
+	}
 	if err := s.repo.UpdateOrder(ctx, o); err != nil {
 		return nil, err
 	}
@@ -90,6 +172,46 @@ func (s *OrderService) CreateOrder(ctx context.Context, req dto.CreateOrderReque
 	_ = s.auditSvc.Log(ctx, audit.Record{
 		UserName: actor, Action: "order.created", EntityType: "order", EntityID: fmt.Sprintf("%d", o.ID),
 	})
+	return o, nil
+}
+
+func (s *OrderService) ensureOrderInvoice(ctx context.Context, o *domain.Order) error {
+	if o.InvoiceID != nil {
+		return nil
+	}
+	items := make([]domain.InvoiceItem, 0, len(o.Items))
+	for _, item := range o.Items {
+		pid := item.ProductID
+		items = append(items, domain.InvoiceItem{ProductID: &pid, ItemName: item.ItemName,
+			Quantity: item.Quantity, UnitPrice: item.UnitPrice, Subtotal: item.Subtotal})
+	}
+	inv := &domain.Invoice{InvoiceNo: formatInvoiceNo(int(time.Now().UnixNano() % 10000)),
+		PartnerID: o.PartnerID, CustomerID: o.CustomerID, TotalAmount: o.TotalAmount,
+		Status: domain.InvoiceUnpaid, Items: items}
+	if err := s.repo.CreateInvoice(ctx, inv); err != nil {
+		return err
+	}
+	inv.InvoiceNo = formatInvoiceNo(inv.ID)
+	if err := s.repo.UpdateInvoice(ctx, inv); err != nil {
+		return err
+	}
+	o.InvoiceID = &inv.ID
+	return s.repo.UpdateOrder(ctx, o)
+}
+
+func (s *OrderService) GetPublicOrder(ctx context.Context, orderNo, email string) (*domain.Order, error) {
+	if strings.TrimSpace(orderNo) == "" || strings.TrimSpace(email) == "" {
+		return nil, domain.ErrOrderNotFound
+	}
+	o, err := s.repo.GetOrderByOrderNoAndEmail(ctx, strings.TrimSpace(orderNo), strings.ToLower(strings.TrimSpace(email)))
+	if err != nil {
+		return nil, err
+	}
+	histories, err := s.repo.GetOrderHistories(ctx, o.ID)
+	if err != nil {
+		return nil, err
+	}
+	o.Histories = histories
 	return o, nil
 }
 
@@ -114,6 +236,15 @@ func (s *OrderService) ProcessOrder(ctx context.Context, id int, actor string, s
 	o, err := s.GetOrder(ctx, id, scope)
 	if err != nil {
 		return nil, err
+	}
+	if o.InvoiceID != nil {
+		inv, err := s.repo.GetInvoiceByID(ctx, *o.InvoiceID)
+		if err != nil {
+			return nil, err
+		}
+		if inv.Status != domain.InvoicePaid {
+			return nil, errors.New("pesanan hanya dapat diproses setelah pembayaran berhasil")
+		}
 	}
 	from := o.Status
 	if err := o.Process(); err != nil {

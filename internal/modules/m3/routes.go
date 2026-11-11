@@ -29,6 +29,6 @@ func RegisterRoutes(r *gin.Engine, jwtSecret string, policy *rbac.PolicyService,
 	m3.GET("/partners/status", middleware.RateLimit(limiter, 30, time.Minute), h.PublicPartnerStatus)
 
 	protected := m3.Group("")
-	protected.Use(middleware.Authenticate(jwtSecret))
+	protected.Use(middleware.Authenticate(jwtSecret), middleware.RequirePlatformAdmin(policy))
 	registerAdminRoutes(protected, policy, h)
 }

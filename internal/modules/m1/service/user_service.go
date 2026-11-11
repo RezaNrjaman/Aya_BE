@@ -35,7 +35,7 @@ type Actor struct {
 // PartnerScoped reports whether the actor may only see and manage members of a
 // single partner. Partner owners and their members must never see other tenants.
 func (a Actor) PartnerScoped() bool {
-	return a.PartnerID != nil || strings.EqualFold(a.Role, "partner")
+	return a.PartnerID != nil || (a.Role != "" && !strings.EqualFold(a.Role, "admin"))
 }
 
 func (a Actor) partnerFilter() *int {
@@ -71,12 +71,17 @@ func (s *UserService) CreateUser(ctx context.Context, req dto.CreateUserRequest,
 		DivisionID: req.DivisionID, Role: req.Role, UnitUsahaID: req.UnitUsahaID, IsActive: true,
 	}
 	if actor.PartnerScoped() {
-		// Partner-created accounts always belong to the actor's partner and
-		// cannot escalate to an internal role.
+		if u.DivisionID == nil || u.UnitUsahaID == nil || u.Role == "" {
+			return nil, errors.New("unit usaha, divisi, dan role wajib dipilih untuk pengguna")
+		}
+		// Tenant ownership is always derived from the authenticated actor.
 		u.PartnerID = actor.PartnerID
-		u.Role = "partner"
-		u.DivisionID = nil
-		u.UnitUsahaID = nil
+		if err := s.checkPartnerRole(ctx, actor, u.Role, u.DivisionID); err != nil {
+			return nil, err
+		}
+		if err := s.userRepo.ValidatePartnerPlacement(ctx, *actor.PartnerID, u.DivisionID, u.UnitUsahaID); err != nil {
+			return nil, err
+		}
 	} else if err := s.checkRoleChange(ctx, actor, u.Role, u.UnitUsahaID); err != nil {
 		return nil, err
 	}
@@ -119,8 +124,42 @@ func (s *UserService) checkRoleChange(ctx context.Context, actor Actor, roleName
 	if roleName == "" {
 		return nil
 	}
-	_, err := s.ensureRoleUsable(ctx, roleName)
-	return err
+	role, err := s.ensureRoleUsable(ctx, roleName)
+	if err != nil {
+		return err
+	}
+	if actor.PartnerScoped() {
+		return s.validatePartnerRole(actor, role)
+	}
+	return nil
+}
+
+func (s *UserService) validatePartnerRole(actor Actor, role *rbac.Role) error {
+	if role == nil || role.IsSystem || role.PartnerID == nil || actor.PartnerID == nil || *role.PartnerID != *actor.PartnerID {
+		return errors.New("partner hanya dapat menetapkan role custom milik tenant sendiri")
+	}
+	return nil
+}
+
+func validateRoleDivision(role *rbac.Role, divisionID *int) error {
+	if role == nil || role.DivisionID == nil || divisionID == nil || *role.DivisionID != *divisionID {
+		return errors.New("role harus berasal dari divisi yang sama dengan pengguna")
+	}
+	return nil
+}
+
+func (s *UserService) checkPartnerRole(ctx context.Context, actor Actor, roleName string, divisionID *int) error {
+	if !actor.CanManageRoles {
+		return ErrRoleChangeForbidden
+	}
+	role, err := s.ensureRoleUsable(ctx, roleName)
+	if err != nil {
+		return err
+	}
+	if err := s.validatePartnerRole(actor, role); err != nil {
+		return err
+	}
+	return validateRoleDivision(role, divisionID)
 }
 
 func (s *UserService) getScopedUser(ctx context.Context, id int, actor Actor) (*domain.User, error) {
@@ -175,11 +214,12 @@ func applyUserUpdates(u *domain.User, req dto.UpdateUserRequest) {
 	}
 	if req.IsActive != nil {
 		u.IsActive = *req.IsActive
+		u.IsManuallyDisabled = !*req.IsActive
 	}
 }
 
 func (s *UserService) checkUserUpdate(ctx context.Context, id int, req dto.UpdateUserRequest, actor Actor) error {
-	changesAccess := req.Role != nil || req.UnitUsahaID != nil || req.IsActive != nil
+	changesAccess := req.Role != nil || req.UnitUsahaID != nil || req.DivisionID != nil || req.IsActive != nil
 	if changesAccess && actor.UserID != 0 && actor.UserID == id {
 		return ErrSelfAccessChange
 	}
@@ -201,12 +241,45 @@ func (s *UserService) UpdateUser(ctx context.Context, id int, req dto.UpdateUser
 	if err := s.checkUserUpdate(ctx, id, req, actor); err != nil {
 		return nil, err
 	}
+	if req.IsActive != nil && *req.IsActive && u.IsPartnerSuspended {
+		return nil, domain.ErrUserInactive
+	}
 	applyUserUpdates(u, req)
 	if actor.PartnerScoped() {
+		if actor.PartnerID == nil {
+			return nil, fmt.Errorf("akun mitra belum terhubung ke data partner")
+		}
 		u.PartnerID = actor.PartnerID
-		u.Role = "partner"
-		u.DivisionID = nil
-		u.UnitUsahaID = nil
+		ownerBootstrap := strings.EqualFold(u.Role, "partner") && u.DivisionID == nil && u.UnitUsahaID == nil
+		if !ownerBootstrap && (u.DivisionID == nil || u.UnitUsahaID == nil || u.Role == "") {
+			return nil, errors.New("unit usaha, divisi, dan role wajib dipilih untuk pengguna")
+		}
+		if req.Role != nil {
+			if strings.EqualFold(*req.Role, "partner") {
+				return nil, errors.New("role owner Partner tidak dapat ditetapkan ulang melalui formulir pengguna")
+			}
+			if err := s.checkPartnerRole(ctx, actor, *req.Role, u.DivisionID); err != nil {
+				return nil, err
+			}
+		} else if strings.EqualFold(u.Role, "partner") && u.DivisionID == nil && u.UnitUsahaID == nil {
+			// Bootstrap owner account is tenant-wide until the first org tree exists.
+		} else {
+			role, err := s.ensureRoleUsable(ctx, u.Role)
+			if err != nil {
+				return nil, err
+			}
+			if err := s.validatePartnerRole(actor, role); err != nil {
+				return nil, err
+			}
+			if err := validateRoleDivision(role, u.DivisionID); err != nil {
+				return nil, err
+			}
+		}
+		if !ownerBootstrap {
+			if err := s.userRepo.ValidatePartnerPlacement(ctx, *actor.PartnerID, u.DivisionID, u.UnitUsahaID); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if err := u.Validate(); err != nil {
 		return nil, err
@@ -249,13 +322,21 @@ func (s *UserService) AssignRole(ctx context.Context, userID int, req dto.Assign
 	if err != nil {
 		return err
 	}
+	if req.UnitUsahaID == nil {
+		req.UnitUsahaID = u.UnitUsahaID
+	}
 	if actor.PartnerScoped() {
-		// ARY-007: partners may assign the base system role "partner" or a
-		// custom role owned by their own tenant — nothing else.
-		ownsRole := role.PartnerID != nil && actor.PartnerID != nil && *role.PartnerID == *actor.PartnerID
-		isBasePartnerRole := strings.EqualFold(role.Name, "partner")
-		if !ownsRole && !isBasePartnerRole {
-			return fmt.Errorf("mitra hanya dapat menetapkan role partner atau role buatannya sendiri")
+		if err := s.validatePartnerRole(actor, role); err != nil {
+			return err
+		}
+		if err := validateRoleDivision(role, u.DivisionID); err != nil {
+			return err
+		}
+		if actor.PartnerID == nil {
+			return fmt.Errorf("akun mitra belum terhubung ke data partner")
+		}
+		if err := s.userRepo.ValidatePartnerPlacement(ctx, *actor.PartnerID, u.DivisionID, req.UnitUsahaID); err != nil {
+			return err
 		}
 	}
 	previousRole, previousUnit := u.Role, u.UnitUsahaID
@@ -263,7 +344,6 @@ func (s *UserService) AssignRole(ctx context.Context, userID int, req dto.Assign
 	u.UnitUsahaID = req.UnitUsahaID
 	if actor.PartnerScoped() {
 		u.PartnerID = actor.PartnerID
-		u.UnitUsahaID = nil
 	}
 	// Update replaces the user's effective assignment atomically (ADR-001: one
 	// effective role and scope per session).

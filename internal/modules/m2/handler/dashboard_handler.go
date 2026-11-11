@@ -2,6 +2,7 @@ package handler
 
 import (
 	"strconv"
+	"strings"
 
 	"araya-business-hub/be/internal/modules/m2/service"
 	"araya-business-hub/be/internal/platform/middleware"
@@ -30,16 +31,25 @@ func parseUnitFilter(c *gin.Context) *int {
 	return &id
 }
 
-func resolveUnitFilter(c *gin.Context) (*int, *response.AppError) {
+func resolveUnitFilter(c *gin.Context) (*int, *int, *response.AppError) {
 	reqID := parseUnitFilter(c)
 	user := middleware.GetAuthUser(c)
-	if user != nil && user.UnitUsahaID != nil {
-		if reqID != nil && *reqID != *user.UnitUsahaID {
-			return nil, response.Forbidden("Akses ditolak untuk unit usaha di luar kewenangan")
-		}
-		return user.UnitUsahaID, nil
+	if user == nil {
+		return reqID, nil, nil
 	}
-	return reqID, nil
+	if user.UnitUsahaID != nil {
+		if reqID != nil && *reqID != *user.UnitUsahaID {
+			return nil, nil, response.Forbidden("Akses ditolak untuk unit usaha di luar kewenangan")
+		}
+		reqID = user.UnitUsahaID
+	}
+	if strings.EqualFold(user.Role, "admin") {
+		return reqID, nil, nil
+	}
+	if user.PartnerID == nil {
+		return nil, nil, response.Forbidden("Akun belum terhubung dengan perusahaan")
+	}
+	return reqID, user.PartnerID, nil
 }
 
 // GetSummary serves Kontrak K-03: GET /api/m2/v1/dashboard-summary
@@ -49,12 +59,12 @@ func (h *DashboardHandler) GetSummary(c *gin.Context) {
 		response.HandleAppError(c, appErr)
 		return
 	}
-	unitID, scopeErr := resolveUnitFilter(c)
+	unitID, partnerID, scopeErr := resolveUnitFilter(c)
 	if scopeErr != nil {
 		response.HandleAppError(c, scopeErr)
 		return
 	}
-	summary, err := h.svc.GetSummary(c.Request.Context(), unitID, dr.From, dr.To)
+	summary, err := h.svc.GetSummary(c.Request.Context(), unitID, partnerID, dr.From, dr.To)
 	if err != nil {
 		response.HandleAppError(c, response.InternalError(err))
 		return

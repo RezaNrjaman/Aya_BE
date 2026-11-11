@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 
@@ -19,18 +20,18 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 }
 
 func (p *PostgresRepository) CreateProduct(ctx context.Context, prod *domain.Product) error {
-	q := `INSERT INTO products (unit_usaha_id, partner_id, name, category, description, price, stock, is_active, image_url, created_at, updated_at)
-	      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW()) RETURNING id, created_at, updated_at`
-	return p.pool.QueryRow(ctx, q, prod.UnitUsahaID, prod.PartnerID, prod.Name, prod.Category, prod.Description,
+	q := `INSERT INTO products (unit_usaha_id, partner_id, name, product_type, category, description, price, stock, is_active, image_url, created_at, updated_at)
+	      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW()) RETURNING id, created_at, updated_at`
+	return p.pool.QueryRow(ctx, q, prod.UnitUsahaID, prod.PartnerID, prod.Name, prod.ProductType, prod.Category, prod.Description,
 		prod.Price, prod.Stock, prod.IsActive, prod.ImageURL).Scan(&prod.ID, &prod.CreatedAt, &prod.UpdatedAt)
 }
 
 func (p *PostgresRepository) GetProductByID(ctx context.Context, id int) (*domain.Product, error) {
-	q := `SELECT id, unit_usaha_id, partner_id, name, COALESCE(category, ''), COALESCE(description, ''),
+	q := `SELECT id, unit_usaha_id, partner_id, name, COALESCE(product_type, 'barang'), COALESCE(category, ''), COALESCE(description, ''),
 	             price, stock, is_active, COALESCE(image_url, ''), created_at, updated_at
 	      FROM products WHERE id = $1`
 	var prod domain.Product
-	err := p.pool.QueryRow(ctx, q, id).Scan(&prod.ID, &prod.UnitUsahaID, &prod.PartnerID, &prod.Name, &prod.Category,
+	err := p.pool.QueryRow(ctx, q, id).Scan(&prod.ID, &prod.UnitUsahaID, &prod.PartnerID, &prod.Name, &prod.ProductType, &prod.Category,
 		&prod.Description, &prod.Price, &prod.Stock, &prod.IsActive, &prod.ImageURL, &prod.CreatedAt, &prod.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -42,15 +43,36 @@ func (p *PostgresRepository) GetProductByID(ctx context.Context, id int) (*domai
 }
 
 func (p *PostgresRepository) UpdateProduct(ctx context.Context, prod *domain.Product) error {
-	q := `UPDATE products SET unit_usaha_id = $1, partner_id = $2, name = $3, category = $4, description = $5,
-	             price = $6, stock = $7, is_active = $8, image_url = $9, updated_at = NOW() WHERE id = $10`
-	ct, err := p.pool.Exec(ctx, q, prod.UnitUsahaID, prod.PartnerID, prod.Name, prod.Category, prod.Description,
+	q := `UPDATE products SET unit_usaha_id = $1, partner_id = $2, name = $3, product_type = $4, category = $5, description = $6,
+	             price = $7, stock = $8, is_active = $9, image_url = $10, updated_at = NOW() WHERE id = $11`
+	ct, err := p.pool.Exec(ctx, q, prod.UnitUsahaID, prod.PartnerID, prod.Name, prod.ProductType, prod.Category, prod.Description,
 		prod.Price, prod.Stock, prod.IsActive, prod.ImageURL, prod.ID)
 	if err != nil {
 		return err
 	}
 	if ct.RowsAffected() == 0 {
 		return domain.ErrProductNotFound
+	}
+	return nil
+}
+
+func (p *PostgresRepository) ValidateUnitOwnership(ctx context.Context, unitID int, partnerID *int) error {
+	var owner sql.NullInt32
+	err := p.pool.QueryRow(ctx, `SELECT partner_id FROM business_units WHERE id = $1`, unitID).Scan(&owner)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.ErrProductNotFound
+		}
+		return err
+	}
+	if partnerID == nil {
+		if owner.Valid {
+			return errors.New("unit usaha bukan unit platform")
+		}
+		return nil
+	}
+	if !owner.Valid || int(owner.Int32) != *partnerID {
+		return errors.New("unit usaha bukan milik perusahaan Anda")
 	}
 	return nil
 }
@@ -71,7 +93,7 @@ func (p *PostgresRepository) ListProducts(ctx context.Context, unitID *int, cate
 }
 
 func (p *PostgresRepository) queryProducts(ctx context.Context, u *int, c, s string, active bool, partnerID *int, limit, offset int) ([]domain.Product, error) {
-	q := `SELECT id, unit_usaha_id, partner_id, name, COALESCE(category, ''), COALESCE(description, ''),
+	q := `SELECT id, unit_usaha_id, partner_id, name, COALESCE(product_type, 'barang'), COALESCE(category, ''), COALESCE(description, ''),
 	             price, stock, is_active, COALESCE(image_url, ''), created_at, updated_at
 	      FROM products WHERE ($1::int IS NULL OR unit_usaha_id = $1) AND ($2 = '%%' OR category ILIKE $2)
 	        AND ($3 = '%%' OR name ILIKE $3) AND ($4 = FALSE OR is_active = TRUE)
@@ -89,7 +111,7 @@ func (p *PostgresRepository) collectProducts(rows pgx.Rows) ([]domain.Product, e
 	var prods []domain.Product
 	for rows.Next() {
 		var prod domain.Product
-		if err := rows.Scan(&prod.ID, &prod.UnitUsahaID, &prod.PartnerID, &prod.Name, &prod.Category,
+		if err := rows.Scan(&prod.ID, &prod.UnitUsahaID, &prod.PartnerID, &prod.Name, &prod.ProductType, &prod.Category,
 			&prod.Description, &prod.Price, &prod.Stock, &prod.IsActive, &prod.ImageURL, &prod.CreatedAt, &prod.UpdatedAt); err != nil {
 			return nil, err
 		}
@@ -108,6 +130,24 @@ func (p *PostgresRepository) GetCustomerByID(ctx context.Context, id int) (*doma
 	q := `SELECT id, partner_id, name, email, COALESCE(phone, ''), COALESCE(address, ''), created_at, updated_at FROM customers WHERE id = $1`
 	var c domain.Customer
 	err := p.pool.QueryRow(ctx, q, id).Scan(&c.ID, &c.PartnerID, &c.Name, &c.Email, &c.Phone, &c.Address, &c.CreatedAt, &c.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrCustomerNotFound
+		}
+		return nil, err
+	}
+	return &c, nil
+}
+
+func (p *PostgresRepository) GetCustomerByEmail(ctx context.Context, email string, partnerID *int) (*domain.Customer, error) {
+	q := `SELECT id, partner_id, name, email, COALESCE(phone, ''), COALESCE(address, ''), created_at, updated_at
+	      FROM customers
+	      WHERE LOWER(email) = LOWER($1) AND partner_id IS NOT DISTINCT FROM $2
+	      ORDER BY id ASC LIMIT 1`
+	var c domain.Customer
+	err := p.pool.QueryRow(ctx, q, strings.TrimSpace(email), partnerID).Scan(
+		&c.ID, &c.PartnerID, &c.Name, &c.Email, &c.Phone, &c.Address, &c.CreatedAt, &c.UpdatedAt,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrCustomerNotFound

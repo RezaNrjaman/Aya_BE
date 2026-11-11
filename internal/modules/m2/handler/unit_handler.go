@@ -2,6 +2,7 @@ package handler
 
 import (
 	"strconv"
+	"strings"
 
 	"araya-business-hub/be/internal/modules/m2/domain"
 	"araya-business-hub/be/internal/modules/m2/dto"
@@ -47,7 +48,7 @@ func getScope(c *gin.Context) (*int, bool) {
 	if u.PartnerID != nil {
 		return u.PartnerID, true
 	}
-	if u.Role == "partner" || u.Role == "Partner" {
+	if !strings.EqualFold(u.Role, "admin") {
 		return nil, false
 	}
 	return nil, true
@@ -105,6 +106,12 @@ func (h *UnitHandler) ListAdminUnits(c *gin.Context) {
 	if err != nil {
 		response.HandleAppError(c, response.InternalError(err))
 		return
+	}
+	// JSON list responses must always contain an array. PostgreSQL returns a
+	// nil Go slice for zero rows, which otherwise serializes to data: null and
+	// can break frontend consumers that iterate over the list.
+	if units == nil {
+		units = []domain.BusinessUnit{}
 	}
 	response.List(c, units, p.Page, p.PerPage, total)
 }

@@ -9,24 +9,26 @@ import (
 )
 
 func (p *PostgresRepository) CreateInvoice(ctx context.Context, inv *domain.Invoice) error {
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
 	sql := `INSERT INTO invoices (invoice_no, quotation_id, partner_id, customer_id, total_amount, status, due_date, paid_at, created_at, updated_at)
 	        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()) RETURNING id, created_at, updated_at`
-	if err := p.pool.QueryRow(ctx, sql, inv.InvoiceNo, inv.QuotationID, inv.PartnerID, inv.CustomerID, inv.TotalAmount, inv.Status, inv.DueDate, inv.PaidAt).
+	if err := tx.QueryRow(ctx, sql, inv.InvoiceNo, inv.QuotationID, inv.PartnerID, inv.CustomerID, inv.TotalAmount, inv.Status, inv.DueDate, inv.PaidAt).
 		Scan(&inv.ID, &inv.CreatedAt, &inv.UpdatedAt); err != nil {
 		return err
 	}
-	return p.insertInvoiceItems(ctx, inv.ID, inv.Items)
-}
-
-func (p *PostgresRepository) insertInvoiceItems(ctx context.Context, invID int, items []domain.InvoiceItem) error {
-	itemQ := `INSERT INTO invoice_items (invoice_id, product_id, item_name, quantity, unit_price, subtotal) VALUES ($1, $2, $3, $4, $5, $6)`
-	for i := range items {
-		items[i].InvoiceID = invID
-		if err := p.pool.QueryRow(ctx, itemQ+` RETURNING id`, invID, items[i].ProductID, items[i].ItemName, items[i].Quantity, items[i].UnitPrice, items[i].Subtotal).Scan(&items[i].ID); err != nil {
+	itemQ := `INSERT INTO invoice_items (invoice_id, product_id, item_name, quantity, unit_price, subtotal) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`
+	for i := range inv.Items {
+		inv.Items[i].InvoiceID = inv.ID
+		if err := tx.QueryRow(ctx, itemQ, inv.ID, inv.Items[i].ProductID, inv.Items[i].ItemName, inv.Items[i].Quantity, inv.Items[i].UnitPrice, inv.Items[i].Subtotal).Scan(&inv.Items[i].ID); err != nil {
 			return err
 		}
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 func (p *PostgresRepository) GetInvoiceByID(ctx context.Context, id int) (*domain.Invoice, error) {

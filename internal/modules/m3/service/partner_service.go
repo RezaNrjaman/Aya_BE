@@ -36,8 +36,13 @@ func NewPartnerService(repo repository.PartnerRepository, auditSvc *audit.Servic
 }
 
 func (s *PartnerService) Register(ctx context.Context, req dto.RegisterPartnerRequest, actor string) (*domain.Partner, error) {
-	if _, err := s.repo.GetByEmail(ctx, req.Email); err == nil {
+	_, lookupErr := s.repo.GetByEmail(ctx, req.Email)
+	if lookupErr == nil {
 		return nil, domain.ErrEmailAlreadyRegistered
+	}
+	if !errors.Is(lookupErr, domain.ErrPartnerNotFound) {
+		// Do not mistake a database/schema outage for an unused e-mail address.
+		return nil, lookupErr
 	}
 	code, err := domain.GenerateRegistrationCode()
 	if err != nil {
@@ -209,7 +214,7 @@ func (s *PartnerService) VerifyPartner(ctx context.Context, id int, req dto.Veri
 	if err != nil {
 		return nil, err
 	}
-	if req.Action == "approve" && s.provisioner != nil {
+	if strings.EqualFold(strings.TrimSpace(req.Action), "approve") && s.provisioner != nil {
 		// ARY-002: no universal initial password. The owner receives a
 		// single-use activation invitation instead.
 		uid, _, err := s.provisioner.ProvisionPartner(ctx, p.Email, p.ContactPerson, p.Phone)
@@ -240,17 +245,26 @@ func (s *PartnerService) SuspendPartner(ctx context.Context, id int, reason, act
 	if err != nil {
 		return nil, err
 	}
+	previous := *p
 	fromStatus := p.Status
 	if err := p.Suspend(reason); err != nil {
 		return nil, err
 	}
-	if s.provisioner != nil {
-		if err := s.provisioner.SetUserStatus(ctx, p.Email, false); err != nil {
-			return nil, fmt.Errorf("gagal menonaktifkan akun partner: %w", err)
-		}
-	}
 	if err := s.repo.Update(ctx, p); err != nil {
 		return nil, err
+	}
+	if s.provisioner != nil {
+		if tenantStatus, ok := s.provisioner.(interface {
+			SetPartnerStatus(context.Context, int, bool) error
+		}); ok {
+			if err := tenantStatus.SetPartnerStatus(ctx, p.ID, false); err != nil {
+				_ = s.repo.Update(ctx, &previous)
+				return nil, fmt.Errorf("gagal menangguhkan seluruh akun partner: %w", err)
+			}
+		} else if err := s.provisioner.SetUserStatus(ctx, p.Email, false); err != nil {
+			_ = s.repo.Update(ctx, &previous)
+			return nil, fmt.Errorf("gagal menonaktifkan akun partner: %w", err)
+		}
 	}
 	_ = s.repo.AddHistory(ctx, &domain.StatusHistory{
 		PartnerID: id, FromStatus: fromStatus, ToStatus: p.Status, Reason: reason, ChangedBy: actor,
@@ -266,17 +280,26 @@ func (s *PartnerService) ReactivatePartner(ctx context.Context, id int, actor st
 	if err != nil {
 		return nil, err
 	}
+	previous := *p
 	fromStatus := p.Status
 	if err := p.Reactivate(); err != nil {
 		return nil, err
 	}
-	if s.provisioner != nil {
-		if err := s.provisioner.SetUserStatus(ctx, p.Email, true); err != nil {
-			return nil, fmt.Errorf("gagal mengaktifkan kembali akun partner: %w", err)
-		}
-	}
 	if err := s.repo.Update(ctx, p); err != nil {
 		return nil, err
+	}
+	if s.provisioner != nil {
+		if tenantStatus, ok := s.provisioner.(interface {
+			SetPartnerStatus(context.Context, int, bool) error
+		}); ok {
+			if err := tenantStatus.SetPartnerStatus(ctx, p.ID, true); err != nil {
+				_ = s.repo.Update(ctx, &previous)
+				return nil, fmt.Errorf("gagal mengaktifkan kembali seluruh akun partner: %w", err)
+			}
+		} else if err := s.provisioner.SetUserStatus(ctx, p.Email, true); err != nil {
+			_ = s.repo.Update(ctx, &previous)
+			return nil, fmt.Errorf("gagal mengaktifkan kembali akun partner: %w", err)
+		}
 	}
 	_ = s.repo.AddHistory(ctx, &domain.StatusHistory{
 		PartnerID: id, FromStatus: fromStatus, ToStatus: p.Status, Reason: "Diaktifkan kembali oleh admin", ChangedBy: actor,

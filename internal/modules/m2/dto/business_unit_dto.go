@@ -28,3 +28,14 @@ type UpdateUnitRequest struct {
 	Address      *string `json:"address,omitempty"`
 	LogoURL      *string `json:"logo_url,omitempty"`
 }
+
+type CreateCategoryRequest struct {
+	UnitUsahaID int    `json:"unit_usaha_id" binding:"required"`
+	Name        string `json:"name" binding:"required"`
+	Description string `json:"description,omitempty"`
+}
+
+type UpdateCategoryRequest struct {
+	Name        *string `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
+}

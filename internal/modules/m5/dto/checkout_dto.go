@@ -1,9 +1,15 @@
 package dto
 
 type CheckoutRequest struct {
-	CustomerID     int    `json:"customer_id" binding:"required"`
-	IdempotencyKey string `json:"idempotency_key,omitempty"`
-	Notes          string `json:"notes,omitempty"`
+	// CustomerID is accepted only for backwards compatibility with internal
+	// callers; the public guest checkout flow never trusts or sends it.
+	CustomerID      int    `json:"customer_id,omitempty"`
+	CustomerName    string `json:"customer_name" binding:"required"`
+	CustomerEmail   string `json:"customer_email" binding:"required,email"`
+	CustomerPhone   string `json:"customer_phone,omitempty"`
+	CustomerAddress string `json:"customer_address,omitempty"`
+	IdempotencyKey  string `json:"idempotency_key,omitempty"`
+	Notes           string `json:"notes,omitempty"`
 }
 
 type CheckoutResponse struct {

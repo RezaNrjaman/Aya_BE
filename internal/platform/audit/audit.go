@@ -11,6 +11,7 @@ import (
 // Record represents a single audit trail entry.
 type Record struct {
 	ID         int64          `json:"id"`
+	PartnerID  *int           `json:"partner_id,omitempty"`
 	UserID     *int           `json:"user_id,omitempty"`
 	UserName   string         `json:"user_name,omitempty"`
 	Action     string         `json:"action"`      // e.g. "user.created", "permission.revoked"
@@ -26,7 +27,27 @@ type Record struct {
 // Repository defines audit log storage operations.
 type Repository interface {
 	Save(ctx context.Context, record *Record) error
-	List(ctx context.Context, limit, offset int) ([]Record, int, error)
+	List(ctx context.Context, partnerID *int, restricted bool, limit, offset int) ([]Record, int, error)
+}
+
+type partnerIDContextKey struct{}
+
+// WithPartnerID attaches the authenticated tenant to the request context so
+// module audit calls inherit tenant ownership without trusting request bodies.
+func WithPartnerID(ctx context.Context, partnerID *int) context.Context {
+	if partnerID == nil {
+		return ctx
+	}
+	id := *partnerID
+	return context.WithValue(ctx, partnerIDContextKey{}, id)
+}
+
+func PartnerIDFromContext(ctx context.Context) *int {
+	id, ok := ctx.Value(partnerIDContextKey{}).(int)
+	if !ok {
+		return nil
+	}
+	return &id
 }
 
 // InMemoryRepository stores audit records in memory (useful for testing and fallback).
@@ -57,11 +78,18 @@ func (m *InMemoryRepository) Save(ctx context.Context, r *Record) error {
 	return nil
 }
 
-func (m *InMemoryRepository) List(ctx context.Context, limit, offset int) ([]Record, int, error) {
+func (m *InMemoryRepository) List(ctx context.Context, partnerID *int, restricted bool, limit, offset int) ([]Record, int, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	total := len(m.records)
+	filtered := make([]Record, 0, len(m.records))
+	for _, record := range m.records {
+		if restricted && (partnerID == nil || record.PartnerID == nil || *record.PartnerID != *partnerID) {
+			continue
+		}
+		filtered = append(filtered, record)
+	}
+	total := len(filtered)
 	if offset >= total {
 		return []Record{}, total, nil
 	}
@@ -71,12 +99,10 @@ func (m *InMemoryRepository) List(ctx context.Context, limit, offset int) ([]Rec
 		end = total
 	}
 
-	// Return copy in reverse chronological order
 	res := make([]Record, 0, end-offset)
 	for i := end - 1; i >= offset; i-- {
-		res = append(res, m.records[i])
+		res = append(res, filtered[i])
 	}
-
 	return res, total, nil
 }
 
@@ -91,6 +117,9 @@ func NewService(repo Repository) *Service {
 
 // Log records an audit event after sanitizing sensitive details.
 func (s *Service) Log(ctx context.Context, r Record) error {
+	if r.PartnerID == nil {
+		r.PartnerID = PartnerIDFromContext(ctx)
+	}
 	if r.Details != nil {
 		r.Details = logging.RedactMap(r.Details)
 	}
@@ -99,8 +128,15 @@ func (s *Service) Log(ctx context.Context, r Record) error {
 
 // List returns audit trail history.
 func (s *Service) List(ctx context.Context, limit, offset int) ([]Record, int, error) {
+	return s.ListScoped(ctx, nil, false, limit, offset)
+}
+
+func (s *Service) ListScoped(ctx context.Context, partnerID *int, restricted bool, limit, offset int) ([]Record, int, error) {
 	if limit <= 0 {
 		limit = 20
 	}
-	return s.repo.List(ctx, limit, offset)
+	if restricted && partnerID == nil {
+		return []Record{}, 0, nil
+	}
+	return s.repo.List(ctx, partnerID, restricted, limit, offset)
 }

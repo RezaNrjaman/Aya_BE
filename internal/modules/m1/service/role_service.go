@@ -28,6 +28,8 @@ var (
 	ErrUnknownPermission = errors.New("permission tidak terdaftar atau tidak aktif")
 	// ErrAccessLockout prevents changes that would remove access management.
 	ErrAccessLockout = errors.New("perubahan ditolak: tindakan ini akan menghapus kemampuan mengelola hak akses")
+	// ErrRoleRequiresPermission prevents Partner roles from being created without access rights.
+	ErrRoleRequiresPermission = errors.New("role harus memiliki minimal satu hak akses")
 )
 
 // RoleActor identifies who is changing role configuration.
@@ -41,7 +43,7 @@ type RoleActor struct {
 // members may manage their own custom roles (ARY-007) but never platform
 // roles or permissions beyond their own kewenangan.
 func (a RoleActor) PartnerScoped() bool {
-	return a.PartnerID != nil || strings.EqualFold(a.Role, "partner")
+	return a.PartnerID != nil || (a.Role != "" && !strings.EqualFold(a.Role, "admin"))
 }
 
 // ErrPlatformRolesOnly is returned when a partner-scoped actor tries to manage
@@ -116,6 +118,33 @@ func (s *RoleService) ListPermissions() []rbac.Permission {
 	return perms
 }
 
+// ListPermissionsForActor returns only permissions that the current tenant
+// actor is allowed to delegate. Platform actors retain the complete catalog.
+func (s *RoleService) ListPermissionsForActor(ctx context.Context, actor RoleActor) ([]rbac.Permission, error) {
+	perms := s.ListPermissions()
+	if !actor.PartnerScoped() {
+		return perms, nil
+	}
+	if actor.PartnerID == nil {
+		return []rbac.Permission{}, ErrPlatformRolesOnly
+	}
+	held, err := s.rbacRepo.GetRolePermissions(ctx, actor.Role)
+	if err != nil {
+		return nil, err
+	}
+	allowed := make(map[string]bool, len(held))
+	for _, key := range held {
+		allowed[strings.ToLower(key)] = true
+	}
+	filtered := make([]rbac.Permission, 0, len(perms))
+	for _, permission := range perms {
+		if allowed[strings.ToLower(permission.Key)] {
+			filtered = append(filtered, permission)
+		}
+	}
+	return filtered, nil
+}
+
 func (s *RoleService) permissionIndex() map[string]rbac.Permission {
 	registry := make(map[string]rbac.Permission)
 	for _, p := range s.ListPermissions() {
@@ -143,19 +172,23 @@ func resolvePermissions(keys []string, registry map[string]rbac.Permission) []rb
 }
 
 func (s *RoleService) ListRoles(ctx context.Context, actor RoleActor) ([]rbac.Role, error) {
-	// ARY-007: partner-scoped actors see only system roles plus their own;
-	// platform actors see everything.
 	roles, err := s.rbacRepo.ListRoles(ctx, actor.PartnerID)
 	if err != nil {
 		return nil, err
 	}
 	if actor.PartnerScoped() {
-		// Hide system role internals from tenants (deactivation guard etc.).
-		for i := range roles {
-			if roles[i].PartnerID == nil {
-				roles[i].IsSystem = true
+		if actor.PartnerID == nil {
+			return nil, ErrPlatformRolesOnly
+		}
+		// Tenant users see only custom roles owned by their own partner.
+		// Platform/system roles are deliberately hidden from tenant screens.
+		owned := make([]rbac.Role, 0, len(roles))
+		for _, role := range roles {
+			if role.PartnerID != nil && *role.PartnerID == *actor.PartnerID && !role.IsSystem {
+				owned = append(owned, role)
 			}
 		}
+		roles = owned
 	}
 	registry := s.permissionIndex()
 	for i := range roles {
@@ -182,7 +215,10 @@ func (s *RoleService) CreateRole(ctx context.Context, req dto.CreateRoleRequest,
 	var ownerPartnerID *int
 	if actor.PartnerScoped() {
 		if actor.PartnerID == nil {
-			return ErrPlatformRolesOnly // unresolvable tenant linkage: lockout
+			return ErrPlatformRolesOnly
+		}
+		if req.DivisionID == nil || *req.DivisionID <= 0 {
+			return errors.New("divisi wajib dipilih untuk membuat role")
 		}
 		owner := *actor.PartnerID
 		ownerPartnerID = &owner
@@ -207,10 +243,13 @@ func (s *RoleService) CreateRole(ctx context.Context, req dto.CreateRoleRequest,
 		return errors.New("nama tampilan role wajib diisi")
 	}
 	keys := uniqueKeys(req.PermissionKeys)
+	if actor.PartnerScoped() && len(keys) == 0 {
+		return ErrRoleRequiresPermission
+	}
 	if err := s.validateDelegatedPermissions(ctx, actor, keys); err != nil {
 		return err
 	}
-	role := rbac.Role{Name: name, DisplayName: displayName, Description: strings.TrimSpace(req.Description), PartnerID: ownerPartnerID, IsActive: true}
+	role := rbac.Role{Name: name, DisplayName: displayName, Description: strings.TrimSpace(req.Description), PartnerID: ownerPartnerID, DivisionID: req.DivisionID, IsActive: true}
 	if err := s.rbacRepo.CreateRole(ctx, role); err != nil {
 		return err
 	}

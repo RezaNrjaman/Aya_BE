@@ -35,12 +35,20 @@ func parseInitOptions(opts ...any) (service.UserProvisioner, repository.PartnerR
 }
 
 func InitModule(r *gin.Engine, secret string, policy *rbac.PolicyService, auditSvc *audit.Service, opts ...any) *Module {
+	hasPersistentRepo := false
+	for _, opt := range opts {
+		if repo, ok := opt.(repository.PartnerRepository); ok && repo != nil {
+			hasPersistentRepo = true
+		}
+	}
 	prov, repo := parseInitOptions(opts...)
 	svc := service.NewPartnerService(repo, auditSvc, prov)
 	h := handler.NewPartnerHandler(svc)
 
 	RegisterRoutes(r, secret, policy, h)
-	_ = SeedInitialPartners(context.Background(), repo, prov)
+	if !hasPersistentRepo {
+		_ = SeedInitialPartners(context.Background(), repo, prov)
+	}
 
 	return &Module{Repo: repo, Svc: svc}
 }

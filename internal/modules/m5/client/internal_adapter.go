@@ -26,7 +26,7 @@ func (a *InternalM2Adapter) GetActiveBusinessUnits(ctx context.Context) ([]dto.B
 	res := make([]dto.BusinessUnitSummary, 0, len(units))
 	for _, u := range units {
 		res = append(res, dto.BusinessUnitSummary{
-			ID: u.ID, Name: u.Name, Category: u.CategoryName,
+			ID: u.ID, PartnerID: u.PartnerID, Name: u.Name, Category: u.CategoryName,
 			Description: u.Description, LogoURL: u.LogoURL,
 		})
 	}
@@ -50,7 +50,7 @@ func (a *InternalM4Adapter) GetActiveProducts(ctx context.Context, unitID *int, 
 	res := make([]dto.ProductSummary, 0, len(prods))
 	for _, p := range prods {
 		res = append(res, dto.ProductSummary{
-			ID: p.ID, UnitUsahaID: p.UnitUsahaID, Name: p.Name,
+			ID: p.ID, UnitUsahaID: p.UnitUsahaID, Name: p.Name, ProductType: p.ProductType,
 			Category: p.Category, Price: p.Price, Stock: p.Stock, IsActive: p.IsActive,
 		})
 	}
@@ -65,7 +65,7 @@ func (a *InternalM4Adapter) GetProductByID(ctx context.Context, id int) (*dto.Pr
 		return nil, err
 	}
 	return &dto.ProductSummary{
-		ID: p.ID, UnitUsahaID: p.UnitUsahaID, Name: p.Name,
+		ID: p.ID, UnitUsahaID: p.UnitUsahaID, Name: p.Name, ProductType: p.ProductType,
 		Category: p.Category, Price: p.Price, Stock: p.Stock, IsActive: p.IsActive,
 	}, nil
 }
@@ -82,11 +82,12 @@ func mapCartItemsToM4(items []domain.CartItem) []m4Dto.OrderItemInput {
 
 func (a *InternalM4Adapter) CreateOrderFromCart(ctx context.Context, req dto.CheckoutRequest, items []domain.CartItem) (*dto.CheckoutResponse, error) {
 	m4Req := m4Dto.CreateOrderRequest{
-		CustomerID:     req.CustomerID,
+		CustomerName: req.CustomerName, CustomerEmail: req.CustomerEmail,
+		CustomerPhone: req.CustomerPhone, CustomerAddress: req.CustomerAddress,
 		IdempotencyKey: req.IdempotencyKey,
 		Items:          mapCartItemsToM4(items),
 	}
-	ord, err := a.ordSvc.CreateOrder(ctx, m4Req, "customer.portal")
+	ord, err := a.ordSvc.CreateOrder(ctx, m4Req, "customer.portal", nil)
 	if err != nil {
 		return nil, err
 	}

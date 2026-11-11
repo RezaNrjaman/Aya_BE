@@ -27,7 +27,7 @@ func TestSecurity_ARY006_DivisiPerPartner(t *testing.T) {
 		}
 		var resp struct {
 			Data struct {
-				ID        int `json:"id"`
+				ID        int  `json:"id"`
 				PartnerID *int `json:"partner_id"`
 			} `json:"data"`
 		}

@@ -3,6 +3,7 @@ package middleware
 import (
 	"strings"
 
+	"araya-business-hub/be/internal/platform/audit"
 	"araya-business-hub/be/internal/platform/response"
 	"araya-business-hub/be/internal/platform/security"
 	"github.com/gin-gonic/gin"
@@ -49,7 +50,9 @@ func Authenticate(jwtSecret string) gin.HandlerFunc {
 			return
 		}
 
-		// Inject authenticated claims into Gin Context
+		// Inject authenticated claims into Gin Context and tenant scope into
+		// request context so audit events inherit the authenticated partner.
+		c.Request = c.Request.WithContext(audit.WithPartnerID(c.Request.Context(), claims.PartnerID))
 		c.Set(ContextUserIDKey, claims.UserID)
 		c.Set(ContextUserNameKey, claims.Name)
 		c.Set(ContextUserRoleKey, claims.Role)

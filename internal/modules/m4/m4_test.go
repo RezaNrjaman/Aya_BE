@@ -515,3 +515,13 @@ func TestM4_Quotation_RejectLifecycle(t *testing.T) {
 		t.Fatalf("expected 422 for invoice from rejected quotation, got %d", wInv.Code)
 	}
 }
+
+func TestSandboxAdapterFailsClosedWithoutSecret(t *testing.T) {
+	adapter := payment.NewSandboxAdapter("")
+	if adapter.VerifySignature([]byte("payload"), "anything") {
+		t.Fatal("empty sandbox secret must never verify a signature")
+	}
+	if _, err := adapter.ProcessPayment(1, 1000, "sandbox_qris", false); err == nil {
+		t.Fatal("payment processing must fail when SANDBOX_CALLBACK_SECRET is missing")
+	}
+}

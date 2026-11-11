@@ -23,9 +23,9 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 }
 
 func (p *PostgresRepository) CreateRole(ctx context.Context, role Role) error {
-	q := `INSERT INTO roles (name, display_name, description, partner_id, is_system, is_active, created_at, updated_at)
-	      VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW()) RETURNING id`
-	err := p.pool.QueryRow(ctx, q, role.Name, role.DisplayName, role.Description, role.PartnerID, role.IsSystem, role.IsActive).Scan(&role.ID)
+	q := `INSERT INTO roles (name, display_name, description, partner_id, division_id, is_system, is_active, created_at, updated_at)
+	      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW()) RETURNING id`
+	err := p.pool.QueryRow(ctx, q, role.Name, role.DisplayName, role.Description, role.PartnerID, role.DivisionID, role.IsSystem, role.IsActive).Scan(&role.ID)
 	if isUniqueViolation(err) {
 		return ErrDuplicateRole
 	}
@@ -33,10 +33,17 @@ func (p *PostgresRepository) CreateRole(ctx context.Context, role Role) error {
 }
 
 func (p *PostgresRepository) GetRole(ctx context.Context, roleName string) (*Role, error) {
-	q := `SELECT id, name, display_name, description, partner_id, is_system, is_active, created_at, updated_at
-	      FROM roles WHERE name = $1`
+	q := `SELECT r.id, r.name, r.display_name, COALESCE(r.description,''), r.partner_id, r.division_id,
+	             COALESCE(d.name,''), COALESCE(bu.name,''), COALESCE(c.name,''),
+	             r.is_system, r.is_active, r.created_at, r.updated_at
+	      FROM roles r
+	      LEFT JOIN divisions d ON d.id=r.division_id
+	      LEFT JOIN business_units bu ON bu.id=d.unit_usaha_id
+	      LEFT JOIN business_categories c ON c.id=d.category_id
+	      WHERE r.name = $1`
 	var r Role
-	err := p.pool.QueryRow(ctx, q, roleName).Scan(&r.ID, &r.Name, &r.DisplayName, &r.Description, &r.PartnerID, &r.IsSystem, &r.IsActive, &r.CreatedAt, &r.UpdatedAt)
+	err := p.pool.QueryRow(ctx, q, roleName).Scan(&r.ID, &r.Name, &r.DisplayName, &r.Description, &r.PartnerID, &r.DivisionID,
+		&r.DivisionName, &r.UnitName, &r.CategoryName, &r.IsSystem, &r.IsActive, &r.CreatedAt, &r.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrRoleNotFound
@@ -68,10 +75,15 @@ func (p *PostgresRepository) listRolePermissions(ctx context.Context, roleID int
 }
 
 func (p *PostgresRepository) ListRoles(ctx context.Context, partnerID *int) ([]Role, error) {
-	q := `SELECT id, name, display_name, description, partner_id, is_system, is_active, created_at, updated_at
-	      FROM roles
-	      WHERE ($1::INT IS NULL OR partner_id IS NULL OR partner_id = $1)
-	      ORDER BY id ASC`
+	q := `SELECT r.id, r.name, r.display_name, COALESCE(r.description,''), r.partner_id, r.division_id,
+	             COALESCE(d.name,''), COALESCE(bu.name,''), COALESCE(c.name,''),
+	             r.is_system, r.is_active, r.created_at, r.updated_at
+	      FROM roles r
+	      LEFT JOIN divisions d ON d.id=r.division_id
+	      LEFT JOIN business_units bu ON bu.id=d.unit_usaha_id
+	      LEFT JOIN business_categories c ON c.id=d.category_id
+	      WHERE ($1::INT IS NULL OR r.partner_id IS NULL OR r.partner_id = $1)
+	      ORDER BY r.division_id NULLS FIRST, r.id ASC`
 	rows, err := p.pool.Query(ctx, q, partnerID)
 	if err != nil {
 		return nil, err
@@ -80,7 +92,8 @@ func (p *PostgresRepository) ListRoles(ctx context.Context, partnerID *int) ([]R
 	var roles []Role
 	for rows.Next() {
 		var r Role
-		if err := rows.Scan(&r.ID, &r.Name, &r.DisplayName, &r.Description, &r.PartnerID, &r.IsSystem, &r.IsActive, &r.CreatedAt, &r.UpdatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.Name, &r.DisplayName, &r.Description, &r.PartnerID, &r.DivisionID, &r.DivisionName, &r.UnitName, &r.CategoryName,
+			&r.IsSystem, &r.IsActive, &r.CreatedAt, &r.UpdatedAt); err != nil {
 			return nil, err
 		}
 		roles = append(roles, r)

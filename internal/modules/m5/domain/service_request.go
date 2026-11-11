@@ -21,6 +21,7 @@ var (
 
 type ServiceRequest struct {
 	ID            int       `json:"id"`
+	PartnerID     *int      `json:"partner_id,omitempty"`
 	UnitUsahaID   int       `json:"unit_usaha_id"`
 	CustomerName  string    `json:"customer_name"`
 	CustomerEmail string    `json:"customer_email"`

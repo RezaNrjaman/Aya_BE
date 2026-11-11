@@ -40,8 +40,8 @@ type OrderStatusHistory struct {
 }
 
 type Order struct {
-	ID             int                  `json:"id"`
-	OrderNo        string               `json:"order_no"`
+	ID      int    `json:"id"`
+	OrderNo string `json:"order_no"`
 	// PartnerID is the owning tenant (ARY-001): derived from the products in
 	// the order. Mixed-partner carts are rejected.
 	PartnerID      *int                 `json:"partner_id,omitempty"`

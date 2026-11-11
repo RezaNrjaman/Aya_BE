@@ -42,7 +42,7 @@ func InitModule(r *gin.Engine, secret string, exp int, rRepo rbac.Repository, pS
 	h := Handlers{
 		Auth:  handler.NewAuthHandler(authSvc, prov),
 		User:  handler.NewUserHandler(userSvc, pSvc),
-		Role:  handler.NewRoleHandler(roleSvc),
+		Role:  handler.NewRoleHandler(roleSvc, userSvc.ResolvePartnerID),
 		Audit: handler.NewAuditHandler(aSvc),
 	}
 	RegisterRoutes(r, secret, pSvc, h)

@@ -37,27 +37,34 @@ func (r *InMemoryRepository) CreateServiceRequest(ctx context.Context, req *doma
 	return nil
 }
 
-func (r *InMemoryRepository) GetServiceRequestByID(ctx context.Context, id int) (*domain.ServiceRequest, error) {
+func (r *InMemoryRepository) GetServiceRequestByID(ctx context.Context, id int, partnerID *int, restricted bool) (*domain.ServiceRequest, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	req, ok := r.requests[id]
-	if !ok {
+	if !ok || (restricted && (partnerID == nil || req.PartnerID == nil || *req.PartnerID != *partnerID)) {
 		return nil, domain.ErrRequestNotFound
 	}
 	return &req, nil
 }
 
-func (r *InMemoryRepository) UpdateServiceRequest(ctx context.Context, req *domain.ServiceRequest) error {
+func (r *InMemoryRepository) UpdateServiceRequest(ctx context.Context, req *domain.ServiceRequest, partnerID *int, restricted bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	current, ok := r.requests[req.ID]
+	if !ok || (restricted && (partnerID == nil || current.PartnerID == nil || *current.PartnerID != *partnerID)) {
+		return domain.ErrRequestNotFound
+	}
 	req.UpdatedAt = time.Now().UTC()
 	r.requests[req.ID] = *req
 	return nil
 }
 
-func filterRequests(all map[int]domain.ServiceRequest, unitID *int, status string) []domain.ServiceRequest {
+func filterRequests(all map[int]domain.ServiceRequest, unitID, partnerID *int, restricted bool, status string) []domain.ServiceRequest {
 	res := make([]domain.ServiceRequest, 0)
 	for _, req := range all {
+		if restricted && (partnerID == nil || req.PartnerID == nil || *req.PartnerID != *partnerID) {
+			continue
+		}
 		if unitID != nil && req.UnitUsahaID != *unitID {
 			continue
 		}
@@ -81,10 +88,10 @@ func paginateRequests(list []domain.ServiceRequest, limit, offset int) []domain.
 	return list[offset:end]
 }
 
-func (r *InMemoryRepository) ListServiceRequests(ctx context.Context, unitID *int, status string, limit, offset int) ([]domain.ServiceRequest, int, error) {
+func (r *InMemoryRepository) ListServiceRequests(ctx context.Context, unitID, partnerID *int, restricted bool, status string, limit, offset int) ([]domain.ServiceRequest, int, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	filtered := filterRequests(r.requests, unitID, status)
+	filtered := filterRequests(r.requests, unitID, partnerID, restricted, status)
 	paged := paginateRequests(filtered, limit, offset)
 	return paged, len(filtered), nil
 }

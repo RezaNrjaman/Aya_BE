@@ -59,7 +59,7 @@ func canAccessTenant(resourcePartnerID *int, scope *int) bool {
 
 func (s *ProductService) CreateProduct(ctx context.Context, req dto.CreateProductRequest, actor string, scope *int) (*domain.Product, error) {
 	p := &domain.Product{
-		UnitUsahaID: req.UnitUsahaID, PartnerID: req.PartnerID, Name: req.Name,
+		UnitUsahaID: req.UnitUsahaID, PartnerID: req.PartnerID, Name: req.Name, ProductType: req.ProductType,
 		Category: req.Category, Description: req.Description, Price: req.Price,
 		Stock: req.Stock, IsActive: true, ImageURL: req.ImageURL,
 	}
@@ -70,6 +70,11 @@ func (s *ProductService) CreateProduct(ctx context.Context, req dto.CreateProduc
 	}
 	if err := p.Validate(); err != nil {
 		return nil, err
+	}
+	if scope != nil {
+		if err := s.repo.ValidateUnitOwnership(ctx, p.UnitUsahaID, scope); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.repo.CreateProduct(ctx, p); err != nil {
 		return nil, err
@@ -92,6 +97,9 @@ func (s *ProductService) GetProduct(ctx context.Context, id int, scope *int) (*d
 }
 
 func applyProductUpdates(p *domain.Product, req dto.UpdateProductRequest) {
+	if req.ProductType != nil {
+		p.ProductType = *req.ProductType
+	}
 	if req.Name != nil {
 		p.Name = *req.Name
 	}
@@ -126,6 +134,11 @@ func (s *ProductService) UpdateProduct(ctx context.Context, id int, req dto.Upda
 	applyProductUpdates(p, req)
 	if err := p.Validate(); err != nil {
 		return nil, err
+	}
+	if scope != nil {
+		if err := s.repo.ValidateUnitOwnership(ctx, p.UnitUsahaID, scope); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.repo.UpdateProduct(ctx, p); err != nil {
 		return nil, err

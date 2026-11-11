@@ -51,7 +51,9 @@ func RegisterRoutes(r *gin.Engine, jwtSecret string, policy *rbac.PolicyService,
 	protected.GET("/auth/me", h.Auth.GetProfile)
 	protected.PATCH("/password", h.Auth.ChangePassword)
 
-	registerUserRoutes(protected.Group("/users"), policy, h.User)
-	registerRoleRoutes(protected.Group("/roles"), policy, h.Role)
-	protected.GET("/audit-logs", middleware.RequirePermission(policy, "m1.audit.read"), h.Audit.ListAuditLogs)
+	tenant := protected.Group("")
+	tenant.Use(middleware.RequirePartnerTenant())
+	registerUserRoutes(tenant.Group("/users"), policy, h.User)
+	registerRoleRoutes(tenant.Group("/roles"), policy, h.Role)
+	tenant.GET("/audit-logs", middleware.RequirePermission(policy, "m1.audit.read"), h.Audit.ListAuditLogs)
 }

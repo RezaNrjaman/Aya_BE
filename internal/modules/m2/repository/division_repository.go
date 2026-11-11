@@ -19,4 +19,5 @@ type DivisionRepository interface {
 	// CountDivisionReferences returns how many users and business units still
 	// point at the division. A division in use must not be deleted outright.
 	CountDivisionReferences(ctx context.Context, id int) (users int, units int, err error)
+	ValidateDivisionPlacement(ctx context.Context, partnerID, unitID, categoryID int) error
 }

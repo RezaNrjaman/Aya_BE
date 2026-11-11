@@ -12,6 +12,7 @@ import (
 
 	"araya-business-hub/be/internal/modules/m1"
 	"araya-business-hub/be/internal/modules/m2"
+	m2dto "araya-business-hub/be/internal/modules/m2/dto"
 	"araya-business-hub/be/internal/modules/m3"
 	"araya-business-hub/be/internal/modules/m4"
 	"araya-business-hub/be/internal/modules/m5"
@@ -37,6 +38,8 @@ func init() {
 var (
 	managerUserID  int
 	customerUserID int
+	partnerUserID  int
+	partnerUnitID  int
 )
 
 func seedTestUsers(repo m1repo.UserRepository) {
@@ -44,7 +47,10 @@ func seedTestUsers(repo m1repo.UserRepository) {
 	_ = repo.Create(context.Background(), mgr)
 	cust := &m1domain.User{Email: "customer@test.local", Name: "Customer Test", Role: "customer", IsActive: true}
 	_ = repo.Create(context.Background(), cust)
-	managerUserID, customerUserID = mgr.ID, cust.ID
+	partnerID := 1
+	partner := &m1domain.User{Email: "partner@test.local", Name: "Partner Test", Role: "partner", PartnerID: &partnerID, IsActive: true}
+	_ = repo.Create(context.Background(), partner)
+	managerUserID, customerUserID, partnerUserID = mgr.ID, cust.ID, partner.ID
 }
 
 func setupTestM5App() (*gin.Engine, *m5.Module) {
@@ -62,6 +68,13 @@ func setupTestM5App() (*gin.Engine, *m5.Module) {
 	m1Mod := m1.InitModule(router, testSecret, 8, repo, policy, auditSvc)
 	seedTestUsers(m1Mod.UserRepo)
 	m2Mod := m2.InitModule(router, testSecret, policy, auditSvc)
+	partnerID := 1
+	partnerUnit, _ := m2Mod.UnitSvc.CreateUnit(context.Background(), m2dto.CreateUnitRequest{
+		Name: "Unit Partner Test",
+	}, "Partner Test", &partnerID)
+	if partnerUnit != nil {
+		partnerUnitID = partnerUnit.ID
+	}
 	m3.InitModule(router, testSecret, policy, auditSvc)
 	m4Mod := m4.InitModule(router, testSecret, policy, auditSvc, nil)
 
@@ -92,6 +105,14 @@ func doReq(r *gin.Engine, method, path, token, sessionID string, body any) *http
 func getAdminToken() string {
 	tok, _ := security.GenerateToken(security.PlatformClaims{
 		UserID: 1, Name: "Admin Test", Role: "admin", Division: "operasional",
+	}, testSecret, 8)
+	return tok
+}
+
+func getPartnerToken() string {
+	partnerID := 1
+	tok, _ := security.GenerateToken(security.PlatformClaims{
+		UserID: partnerUserID, Name: "Partner Test", Role: "partner", PartnerID: &partnerID,
 	}, testSecret, 8)
 	return tok
 }
@@ -208,20 +229,18 @@ func TestM5_ServiceRequest_ValidationFails(t *testing.T) {
 
 func TestM5_ServiceRequest_StatusLifecycle(t *testing.T) {
 	router, _ := setupTestM5App()
-	adminToken := getAdminToken()
-
 	reqBody := dto.CreateServiceRequest{
-		UnitUsahaID: 1, CustomerName: "Ahmad", CustomerEmail: "ahmad@example.com", Description: "Permintaan cetak",
+		UnitUsahaID: partnerUnitID, CustomerName: "Ahmad", CustomerEmail: "ahmad@example.com", Description: "Permintaan cetak",
 	}
 	_ = doReq(router, http.MethodPost, "/api/m5/v1/service-requests", "", "", reqBody)
 
 	// Status pending -> diproses
-	wProc := doReq(router, http.MethodPatch, "/api/m5/v1/admin/service-requests/2/status", adminToken, "", dto.UpdateServiceRequestStatus{Status: "diproses"})
+	wProc := doReq(router, http.MethodPatch, "/api/m5/v1/admin/service-requests/2/status", getPartnerToken(), "", dto.UpdateServiceRequestStatus{Status: "diproses"})
 	if wProc.Code != http.StatusOK {
 		t.Fatalf("expected 200 for status diproses, got %d: %s", wProc.Code, wProc.Body.String())
 	}
 	// Status diproses -> selesai
-	wComp := doReq(router, http.MethodPatch, "/api/m5/v1/admin/service-requests/2/status", adminToken, "", dto.UpdateServiceRequestStatus{Status: "selesai"})
+	wComp := doReq(router, http.MethodPatch, "/api/m5/v1/admin/service-requests/2/status", getPartnerToken(), "", dto.UpdateServiceRequestStatus{Status: "selesai"})
 	if wComp.Code != http.StatusOK {
 		t.Fatalf("expected 200 for status selesai, got %d: %s", wComp.Code, wComp.Body.String())
 	}
@@ -311,7 +330,7 @@ func TestM5_Checkout_SuccessCreatesOrderAndClearsCart(t *testing.T) {
 
 	_ = doReq(router, http.MethodPost, "/api/m5/v1/cart/items", "", sessionID, dto.AddToCartRequest{ProductID: 1, Quantity: 2})
 	chkReq := dto.CheckoutRequest{
-		CustomerID:     1,
+		CustomerName: "Customer Checkout", CustomerEmail: "checkout@example.com",
 		IdempotencyKey: "chk-session-20261109-001",
 		Notes:          "Kirim ke fakultas teknik",
 	}
@@ -335,13 +354,13 @@ func TestM5_Checkout_Idempotency(t *testing.T) {
 	key := "chk-idemp-unique-12345"
 
 	_ = doReq(router, http.MethodPost, "/api/m5/v1/cart/items", "", sessionID, dto.AddToCartRequest{ProductID: 1, Quantity: 1})
-	w1 := doReq(router, http.MethodPost, "/api/m5/v1/cart/checkout", "", sessionID, dto.CheckoutRequest{CustomerID: 1, IdempotencyKey: key})
+	w1 := doReq(router, http.MethodPost, "/api/m5/v1/cart/checkout", "", sessionID, dto.CheckoutRequest{CustomerName: "Customer Idempotent", CustomerEmail: "idempotent@example.com", IdempotencyKey: key})
 	if w1.Code != http.StatusCreated {
 		t.Fatalf("expected 201 for first checkout, got %d", w1.Code)
 	}
 	// Second checkout with same key
 	_ = doReq(router, http.MethodPost, "/api/m5/v1/cart/items", "", sessionID, dto.AddToCartRequest{ProductID: 1, Quantity: 1})
-	w2 := doReq(router, http.MethodPost, "/api/m5/v1/cart/checkout", "", sessionID, dto.CheckoutRequest{CustomerID: 1, IdempotencyKey: key})
+	w2 := doReq(router, http.MethodPost, "/api/m5/v1/cart/checkout", "", sessionID, dto.CheckoutRequest{CustomerName: "Customer Idempotent", CustomerEmail: "idempotent@example.com", IdempotencyKey: key})
 	if w2.Code != http.StatusCreated {
 		t.Fatalf("expected 201 for second checkout with same key, got %d", w2.Code)
 	}

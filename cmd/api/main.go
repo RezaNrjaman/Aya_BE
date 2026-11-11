@@ -14,6 +14,7 @@ import (
 	m1Repo "araya-business-hub/be/internal/modules/m1/repository"
 	"araya-business-hub/be/internal/modules/m2"
 	m2Repo "araya-business-hub/be/internal/modules/m2/repository"
+	m2Service "araya-business-hub/be/internal/modules/m2/service"
 	"araya-business-hub/be/internal/modules/m3"
 	m3Repo "araya-business-hub/be/internal/modules/m3/repository"
 	"araya-business-hub/be/internal/modules/m4"
@@ -82,10 +83,13 @@ func initModules(r *gin.Engine, cfg *config.Config, rRepo rbac.Repository, pSvc 
 	m3Mod := m3.InitModule(r, cfg.JWTSecret, pSvc, aSvc, m1Mod.Provisioner, pR)
 	// ARY-004: m3's partner status gates the public storefront in m4.
 	m4Mod := m4.InitModule(r, cfg.JWTSecret, pSvc, aSvc, m3Mod.Svc, m4R)
+	if provider, ok := m4Mod.Repo.(m2Service.DashboardDataProvider); ok {
+		m2Mod.DashboardSvc.SetDataProvider(provider)
+	}
 
 	m2Cli := m5Client.NewInternalM2Adapter(m2Mod.UnitSvc)
 	m4Cli := m5Client.NewInternalM4Adapter(m4Mod.ProductSvc, m4Mod.OrderSvc)
-	m5.InitModule(r, cfg.JWTSecret, pSvc, aSvc, m2Cli, m4Cli, m5R)
+	m5.InitModule(r, cfg.JWTSecret, pSvc, aSvc, m2Cli, m4Cli, m5R, m3Mod.Svc)
 }
 
 func startServer(srv *http.Server) {

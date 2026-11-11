@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"errors"
+	"strings"
 
 	"araya-business-hub/be/internal/modules/m1/dto"
 	"araya-business-hub/be/internal/modules/m1/service"
@@ -12,16 +14,26 @@ import (
 )
 
 type RoleHandler struct {
-	roleSvc *service.RoleService
+	roleSvc         *service.RoleService
+	partnerResolver func(context.Context, int) *int
 }
 
-func NewRoleHandler(svc *service.RoleService) *RoleHandler {
-	return &RoleHandler{roleSvc: svc}
+func NewRoleHandler(svc *service.RoleService, resolver ...func(context.Context, int) *int) *RoleHandler {
+	var resolve func(context.Context, int) *int
+	if len(resolver) > 0 {
+		resolve = resolver[0]
+	}
+	return &RoleHandler{roleSvc: svc, partnerResolver: resolve}
 }
 
-func getRoleActor(c *gin.Context) service.RoleActor {
+func (h *RoleHandler) getRoleActor(c *gin.Context) service.RoleActor {
 	if u := middleware.GetAuthUser(c); u != nil {
-		return service.RoleActor{Name: u.Name, Role: u.Role, PartnerID: u.PartnerID}
+		actor := service.RoleActor{Name: u.Name, Role: u.Role, PartnerID: u.PartnerID}
+		isPartnerActor := strings.EqualFold(u.Role, "partner") || strings.HasPrefix(strings.ToLower(u.Role), "p")
+		if actor.PartnerID == nil && isPartnerActor && h.partnerResolver != nil {
+			actor.PartnerID = h.partnerResolver(c.Request.Context(), u.UserID)
+		}
+		return actor
 	}
 	return service.RoleActor{Name: "system"}
 }
@@ -38,7 +50,7 @@ func roleError(err error) *response.AppError {
 		return response.Forbidden(err.Error())
 	case errors.Is(err, rbac.ErrRoleInactive):
 		return response.ValidationError("Role tidak aktif; aktifkan role terlebih dahulu", nil)
-	case errors.Is(err, service.ErrUnknownPermission), errors.Is(err, rbac.ErrPermissionNotFound),
+	case errors.Is(err, service.ErrUnknownPermission), errors.Is(err, service.ErrRoleRequiresPermission), errors.Is(err, rbac.ErrPermissionNotFound),
 		errors.Is(err, rbac.ErrInvalidRoleName):
 		return response.ValidationError(err.Error(), nil)
 	}
@@ -50,16 +62,21 @@ func roleError(err error) *response.AppError {
 }
 
 func (h *RoleHandler) ListRoles(c *gin.Context) {
-	roles, err := h.roleSvc.ListRoles(c.Request.Context(), getRoleActor(c))
+	roles, err := h.roleSvc.ListRoles(c.Request.Context(), h.getRoleActor(c))
 	if err != nil {
-		response.HandleAppError(c, response.InternalError(err))
+		response.HandleAppError(c, roleError(err))
 		return
 	}
 	response.OK(c, roles)
 }
 
 func (h *RoleHandler) ListPermissions(c *gin.Context) {
-	response.OK(c, h.roleSvc.ListPermissions())
+	permissions, err := h.roleSvc.ListPermissionsForActor(c.Request.Context(), h.getRoleActor(c))
+	if err != nil {
+		response.HandleAppError(c, roleError(err))
+		return
+	}
+	response.OK(c, permissions)
 }
 
 func (h *RoleHandler) CreateRole(c *gin.Context) {
@@ -68,7 +85,7 @@ func (h *RoleHandler) CreateRole(c *gin.Context) {
 		response.HandleAppError(c, response.ValidationError("Kode role dan nama tampilan wajib diisi", nil))
 		return
 	}
-	if err := h.roleSvc.CreateRole(c.Request.Context(), req, getRoleActor(c)); err != nil {
+	if err := h.roleSvc.CreateRole(c.Request.Context(), req, h.getRoleActor(c)); err != nil {
 		response.HandleAppError(c, roleError(err))
 		return
 	}
@@ -81,7 +98,7 @@ func (h *RoleHandler) UpdateRole(c *gin.Context) {
 		response.HandleAppError(c, response.ValidationError("Format data tidak valid", nil))
 		return
 	}
-	if err := h.roleSvc.UpdateRole(c.Request.Context(), c.Param("name"), req, getRoleActor(c)); err != nil {
+	if err := h.roleSvc.UpdateRole(c.Request.Context(), c.Param("name"), req, h.getRoleActor(c)); err != nil {
 		response.HandleAppError(c, roleError(err))
 		return
 	}
@@ -94,7 +111,7 @@ func (h *RoleHandler) AssignPermission(c *gin.Context) {
 		response.HandleAppError(c, response.ValidationError("permission_key wajib diisi", nil))
 		return
 	}
-	if err := h.roleSvc.AssignPermission(c.Request.Context(), c.Param("name"), req.PermissionKey, getRoleActor(c)); err != nil {
+	if err := h.roleSvc.AssignPermission(c.Request.Context(), c.Param("name"), req.PermissionKey, h.getRoleActor(c)); err != nil {
 		response.HandleAppError(c, roleError(err))
 		return
 	}
@@ -102,7 +119,7 @@ func (h *RoleHandler) AssignPermission(c *gin.Context) {
 }
 
 func (h *RoleHandler) RevokePermission(c *gin.Context) {
-	if err := h.roleSvc.RevokePermission(c.Request.Context(), c.Param("name"), c.Param("key"), getRoleActor(c)); err != nil {
+	if err := h.roleSvc.RevokePermission(c.Request.Context(), c.Param("name"), c.Param("key"), h.getRoleActor(c)); err != nil {
 		response.HandleAppError(c, roleError(err))
 		return
 	}
@@ -116,7 +133,7 @@ func (h *RoleHandler) SetPermissions(c *gin.Context) {
 		response.HandleAppError(c, response.ValidationError("permission_keys harus berupa daftar", nil))
 		return
 	}
-	role, err := h.roleSvc.SetPermissions(c.Request.Context(), c.Param("name"), req.PermissionKeys, getRoleActor(c))
+	role, err := h.roleSvc.SetPermissions(c.Request.Context(), c.Param("name"), req.PermissionKeys, h.getRoleActor(c))
 	if err != nil {
 		response.HandleAppError(c, roleError(err))
 		return

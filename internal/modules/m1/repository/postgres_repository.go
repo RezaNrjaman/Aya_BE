@@ -53,7 +53,11 @@ func replaceRoleAssignment(ctx context.Context, tx pgx.Tx, u *domain.User) error
 		return nil
 	}
 	var roleID int
-	err := tx.QueryRow(ctx, `SELECT id FROM roles WHERE name = $1 AND is_active = TRUE`, u.Role).Scan(&roleID)
+	err := tx.QueryRow(ctx, `SELECT id FROM roles WHERE name = $1 AND is_active = TRUE
+		  AND ((partner_id = $2 AND division_id = $3)
+		       OR (name = 'partner' AND is_system = TRUE AND partner_id IS NULL AND $2 IS NOT NULL AND $3 IS NULL)
+		       OR (is_system = TRUE AND partner_id IS NULL AND division_id IS NULL AND $2 IS NULL AND $3 IS NULL))`,
+		u.Role, u.PartnerID, u.DivisionID).Scan(&roleID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrRoleNotAssignable
 	}
@@ -71,7 +75,7 @@ func replaceRoleAssignment(ctx context.Context, tx pgx.Tx, u *domain.User) error
 func (p *PostgresUserRepository) GetByID(ctx context.Context, id int) (*domain.User, error) {
 	q := `SELECT u.id, u.email, u.password_hash, u.name, COALESCE(u.phone, ''), u.division_id,
 	             COALESCE(d.name, ''), COALESCE(r.name, ''), ura.unit_usaha_id, u.partner_id, u.is_active,
-	             COALESCE(u.activation_token_hash, ''), u.activation_expires_at, COALESCE(u.is_manually_disabled, FALSE), u.created_at, u.updated_at
+	             COALESCE(u.activation_token_hash, ''), u.activation_expires_at, COALESCE(u.is_manually_disabled, FALSE), COALESCE(u.is_partner_suspended, FALSE), u.created_at, u.updated_at
 	      FROM users u
 	      LEFT JOIN divisions d ON u.division_id = d.id
 	      LEFT JOIN LATERAL (
@@ -86,7 +90,7 @@ func (p *PostgresUserRepository) GetByID(ctx context.Context, id int) (*domain.U
 func (p *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
 	q := `SELECT u.id, u.email, u.password_hash, u.name, COALESCE(u.phone, ''), u.division_id,
 	             COALESCE(d.name, ''), COALESCE(r.name, ''), ura.unit_usaha_id, u.partner_id, u.is_active,
-	             COALESCE(u.activation_token_hash, ''), u.activation_expires_at, COALESCE(u.is_manually_disabled, FALSE), u.created_at, u.updated_at
+	             COALESCE(u.activation_token_hash, ''), u.activation_expires_at, COALESCE(u.is_manually_disabled, FALSE), COALESCE(u.is_partner_suspended, FALSE), u.created_at, u.updated_at
 	      FROM users u
 	      LEFT JOIN divisions d ON u.division_id = d.id
 	      LEFT JOIN LATERAL (
@@ -102,7 +106,7 @@ func (p *PostgresUserRepository) scanUser(row pgx.Row) (*domain.User, error) {
 	var u domain.User
 	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Phone, &u.DivisionID,
 		&u.DivisionName, &u.Role, &u.UnitUsahaID, &u.PartnerID, &u.IsActive,
-		&u.ActivationTokenHash, &u.ActivationExpiresAt, &u.IsManuallyDisabled, &u.CreatedAt, &u.UpdatedAt)
+		&u.ActivationTokenHash, &u.ActivationExpiresAt, &u.IsManuallyDisabled, &u.IsPartnerSuspended, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrUserNotFound
@@ -118,8 +122,9 @@ func (p *PostgresUserRepository) Update(ctx context.Context, u *domain.User) err
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	q := `UPDATE users SET name = $1, phone = $2, division_id = $3, partner_id = $4, is_active = $5, updated_at = NOW() WHERE id = $6`
-	ct, err := tx.Exec(ctx, q, u.Name, u.Phone, u.DivisionID, u.PartnerID, u.IsActive, u.ID)
+	q := `UPDATE users SET name = $1, phone = $2, division_id = $3, partner_id = $4,
+	             is_active = $5, is_manually_disabled = $6, updated_at = NOW() WHERE id = $7`
+	ct, err := tx.Exec(ctx, q, u.Name, u.Phone, u.DivisionID, u.PartnerID, u.IsActive, u.IsManuallyDisabled, u.ID)
 	if err != nil {
 		return err
 	}
@@ -144,6 +149,30 @@ func (p *PostgresUserRepository) UpdatePassword(ctx context.Context, id int, has
 	return nil
 }
 
+func (p *PostgresUserRepository) ValidatePartnerPlacement(ctx context.Context, partnerID int, divisionID, unitID *int) error {
+	if divisionID == nil || unitID == nil {
+		return domain.ErrInvalidPartnerPlacement
+	}
+	var exists bool
+	err := p.pool.QueryRow(ctx, `SELECT EXISTS(
+		SELECT 1
+		FROM divisions d
+		JOIN business_categories c ON c.id = d.category_id
+		JOIN business_units bu ON bu.id = d.unit_usaha_id
+		WHERE d.id = $1 AND d.unit_usaha_id = $2
+		  AND d.partner_id = $3 AND c.partner_id = $3
+		  AND c.unit_usaha_id = bu.id AND bu.partner_id = $3
+		  AND d.is_active = TRUE AND c.is_active = TRUE AND bu.is_active = TRUE
+	)`, *divisionID, *unitID, partnerID).Scan(&exists)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return domain.ErrInvalidPartnerPlacement
+	}
+	return nil
+}
+
 func (p *PostgresUserRepository) Deactivate(ctx context.Context, id int) error {
 	q := `UPDATE users SET is_active = FALSE, is_manually_disabled = TRUE, updated_at = NOW() WHERE id = $1`
 	ct, err := p.pool.Exec(ctx, q, id)
@@ -159,7 +188,7 @@ func (p *PostgresUserRepository) Deactivate(ctx context.Context, id int) error {
 func (p *PostgresUserRepository) GetByActivationTokenHash(ctx context.Context, tokenHash string) (*domain.User, error) {
 	q := `SELECT u.id, u.email, u.password_hash, u.name, COALESCE(u.phone, ''), u.division_id,
 	             COALESCE(d.name, ''), COALESCE(r.name, ''), ura.unit_usaha_id, u.partner_id, u.is_active,
-	             COALESCE(u.activation_token_hash, ''), u.activation_expires_at, COALESCE(u.is_manually_disabled, FALSE), u.created_at, u.updated_at
+	             COALESCE(u.activation_token_hash, ''), u.activation_expires_at, COALESCE(u.is_manually_disabled, FALSE), COALESCE(u.is_partner_suspended, FALSE), u.created_at, u.updated_at
 	      FROM users u
 	      LEFT JOIN divisions d ON u.division_id = d.id
 	      LEFT JOIN LATERAL (
@@ -186,7 +215,7 @@ func (p *PostgresUserRepository) IssueActivationToken(ctx context.Context, id in
 func (p *PostgresUserRepository) ActivateAccount(ctx context.Context, id int, passwordHash string) error {
 	q := `UPDATE users SET password_hash = $1, activation_token_hash = '', activation_expires_at = NULL,
 	             is_active = TRUE, is_manually_disabled = FALSE, updated_at = NOW()
-	      WHERE id = $2`
+	      WHERE id = $2 AND COALESCE(is_partner_suspended, FALSE) = FALSE`
 	ct, err := p.pool.Exec(ctx, q, passwordHash, id)
 	if err != nil {
 		return err
@@ -215,7 +244,7 @@ func (p *PostgresUserRepository) List(ctx context.Context, search, division stri
 func (p *PostgresUserRepository) queryUserList(ctx context.Context, s, d string, partnerID *int, limit, offset int) ([]domain.User, error) {
 	q := `SELECT u.id, u.email, u.password_hash, u.name, COALESCE(u.phone, ''), u.division_id,
 	             COALESCE(d.name, ''), COALESCE(r.name, ''), ura.unit_usaha_id, u.partner_id, u.is_active,
-	             COALESCE(u.activation_token_hash, ''), u.activation_expires_at, COALESCE(u.is_manually_disabled, FALSE), u.created_at, u.updated_at
+	             COALESCE(u.activation_token_hash, ''), u.activation_expires_at, COALESCE(u.is_manually_disabled, FALSE), COALESCE(u.is_partner_suspended, FALSE), u.created_at, u.updated_at
 	      FROM users u
 	      LEFT JOIN divisions d ON u.division_id = d.id
 	      LEFT JOIN LATERAL (
@@ -240,10 +269,29 @@ func (p *PostgresUserRepository) collectUserRows(rows pgx.Rows) ([]domain.User, 
 	for rows.Next() {
 		var u domain.User
 		if err := rows.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Phone, &u.DivisionID,
-			&u.DivisionName, &u.Role, &u.UnitUsahaID, &u.PartnerID, &u.IsActive, &u.CreatedAt, &u.UpdatedAt); err != nil {
+			&u.DivisionName, &u.Role, &u.UnitUsahaID, &u.PartnerID, &u.IsActive,
+			&u.ActivationTokenHash, &u.ActivationExpiresAt, &u.IsManuallyDisabled, &u.IsPartnerSuspended,
+			&u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, err
 		}
 		users = append(users, u)
 	}
 	return users, nil
+}
+
+// SetPartnerUsersSuspended disables every account belonging to a suspended
+// tenant. Reactivation restores only accounts disabled by the suspension,
+// never accounts manually disabled by a partner administrator.
+func (p *PostgresUserRepository) SetPartnerUsersSuspended(ctx context.Context, partnerID int, suspended bool) error {
+	if suspended {
+		_, err := p.pool.Exec(ctx, `UPDATE users
+			SET is_active = FALSE, is_partner_suspended = TRUE, updated_at = NOW()
+			WHERE partner_id = $1`, partnerID)
+		return err
+	}
+	_, err := p.pool.Exec(ctx, `UPDATE users
+		SET is_active = CASE WHEN COALESCE(is_manually_disabled, FALSE) THEN FALSE ELSE TRUE END,
+		    is_partner_suspended = FALSE, updated_at = NOW()
+		WHERE partner_id = $1 AND COALESCE(is_partner_suspended, FALSE) = TRUE`, partnerID)
+	return err
 }

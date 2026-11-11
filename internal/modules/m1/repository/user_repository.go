@@ -15,7 +15,9 @@ type UserRepository interface {
 	Update(ctx context.Context, u *domain.User) error
 	UpdatePassword(ctx context.Context, id int, hash string) error
 	List(ctx context.Context, search, division string, partnerID *int, limit, offset int) ([]domain.User, int, error)
+	ValidatePartnerPlacement(ctx context.Context, partnerID int, divisionID, unitID *int) error
 	Deactivate(ctx context.Context, id int) error
+	SetPartnerUsersSuspended(ctx context.Context, partnerID int, suspended bool) error
 	// GetByActivationTokenHash finds the account a (hashed) activation or
 	// password-reset invitation token belongs to (ARY-002).
 	GetByActivationTokenHash(ctx context.Context, tokenHash string) (*domain.User, error)

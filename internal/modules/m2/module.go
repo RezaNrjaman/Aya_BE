@@ -26,6 +26,7 @@ func resolveUnitRepo(opts ...repository.UnitRepository) repository.UnitRepositor
 }
 
 func InitModule(r *gin.Engine, secret string, policy *rbac.PolicyService, auditSvc *audit.Service, repoOpt ...repository.UnitRepository) *Module {
+	seedMemoryDemo := len(repoOpt) == 0 || repoOpt[0] == nil
 	repo := resolveUnitRepo(repoOpt...)
 	unitSvc := service.NewUnitService(repo, auditSvc)
 	dashSvc := service.NewDashboardService(repo)
@@ -35,9 +36,12 @@ func InitModule(r *gin.Engine, secret string, policy *rbac.PolicyService, auditS
 		Dashboard: handler.NewDashboardHandler(dashSvc),
 		// Both concrete repositories implement DivisionRepository (ARY-006).
 		Division: handler.NewDivisionHandler(service.NewDivisionService(repo.(repository.DivisionRepository), auditSvc)),
+		Category: handler.NewCategoryHandler(service.NewCategoryService(repo, auditSvc)),
 	}
 	RegisterRoutes(r, secret, policy, h)
-	_ = SeedInitialUnits(context.Background(), repo)
+	if seedMemoryDemo {
+		_ = SeedInitialUnits(context.Background(), repo)
+	}
 
 	return &Module{Repo: repo, UnitSvc: unitSvc, DashboardSvc: dashSvc}
 }

@@ -135,6 +135,12 @@ func (r *InMemoryUserRepository) List(ctx context.Context, search, div string, p
 	return filtered[offset:end], total, nil
 }
 
+// In-memory mode does not persist organization tables; production PostgreSQL
+// performs the authoritative tenant placement validation.
+func (r *InMemoryUserRepository) ValidatePartnerPlacement(ctx context.Context, partnerID int, divisionID, unitID *int) error {
+	return nil
+}
+
 func (r *InMemoryUserRepository) Deactivate(ctx context.Context, id int) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -186,6 +192,9 @@ func (r *InMemoryUserRepository) ActivateAccount(ctx context.Context, id int, pa
 	if !exists {
 		return domain.ErrUserNotFound
 	}
+	if u.IsPartnerSuspended {
+		return domain.ErrUserInactive
+	}
 	u.PasswordHash = passwordHash
 	u.ActivationTokenHash = ""
 	u.ActivationExpiresAt = nil
@@ -193,5 +202,27 @@ func (r *InMemoryUserRepository) ActivateAccount(ctx context.Context, id int, pa
 	u.IsManuallyDisabled = false
 	u.UpdatedAt = time.Now().UTC()
 	r.users[id] = u
+	return nil
+}
+
+func (r *InMemoryUserRepository) SetPartnerUsersSuspended(ctx context.Context, partnerID int, suspended bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, u := range r.users {
+		if u.PartnerID == nil || *u.PartnerID != partnerID {
+			continue
+		}
+		if suspended {
+			u.IsPartnerSuspended = true
+			u.IsActive = false
+		} else if u.IsPartnerSuspended {
+			u.IsPartnerSuspended = false
+			if !u.IsManuallyDisabled {
+				u.IsActive = true
+			}
+		}
+		u.UpdatedAt = time.Now().UTC()
+		r.users[id] = u
+	}
 	return nil
 }

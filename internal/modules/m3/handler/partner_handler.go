@@ -48,10 +48,10 @@ func (h *PartnerHandler) resolveScope(c *gin.Context) (*int, bool) {
 	if u.PartnerID != nil {
 		return u.PartnerID, true
 	}
-	if !strings.EqualFold(u.Role, "partner") {
+	if strings.EqualFold(u.Role, "admin") {
 		return nil, false
 	}
-	// Fallback for tokens issued before partner_id was included in claims.
+	// Fallback for legacy tokens or custom tenant roles without partner_id.
 	if p, err := h.svc.GetPartnerByUserID(c.Request.Context(), u.UserID); err == nil {
 		id := p.ID
 		return &id, true

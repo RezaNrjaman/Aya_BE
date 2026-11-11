@@ -49,7 +49,7 @@ func getScope(c *gin.Context) (*int, bool) {
 	if u.PartnerID != nil {
 		return u.PartnerID, true
 	}
-	if strings.EqualFold(u.Role, "partner") {
+	if !strings.EqualFold(u.Role, "admin") {
 		return nil, false
 	}
 	return nil, true
@@ -104,7 +104,11 @@ func (h *ProductHandler) GetProduct(c *gin.Context) {
 		response.HandleAppError(c, appErr)
 		return
 	}
-	scope, _ := getScope(c)
+	scope, ok := getScope(c)
+	if !ok {
+		response.HandleAppError(c, response.Forbidden("Akun belum terhubung dengan perusahaan"))
+		return
+	}
 	p, err := h.svc.GetProduct(c.Request.Context(), id, scope)
 	if err != nil {
 		response.HandleAppError(c, response.NotFound("Produk tidak ditemukan"))

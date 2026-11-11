@@ -2,6 +2,7 @@ package m4
 
 import (
 	"context"
+	"os"
 
 	"araya-business-hub/be/internal/modules/m4/domain"
 	"araya-business-hub/be/internal/modules/m4/handler"
@@ -29,8 +30,9 @@ func resolveM4Repo(opts ...repository.Repository) repository.Repository {
 // InitModule wires module m4. partnerStatus (ARY-004) may be nil in tests
 // that do not exercise the storefront visibility rules.
 func InitModule(r *gin.Engine, secret string, policy *rbac.PolicyService, auditSvc *audit.Service, partnerStatus service.PartnerStatusResolver, repoOpt ...repository.Repository) *Module {
+	seedMemoryDemo := len(repoOpt) == 0 || repoOpt[0] == nil
 	repo := resolveM4Repo(repoOpt...)
-	adapter := payment.NewSandboxAdapter("")
+	adapter := payment.NewSandboxAdapter(os.Getenv("SANDBOX_CALLBACK_SECRET"))
 	prodSvc := service.NewProductService(repo, auditSvc, partnerStatus)
 	custSvc := service.NewCustomerService(repo)
 	quotSvc := service.NewQuotationService(repo, auditSvc)
@@ -42,10 +44,12 @@ func InitModule(r *gin.Engine, secret string, policy *rbac.PolicyService, auditS
 		Customer:  handler.NewCustomerHandler(custSvc),
 		Quotation: handler.NewQuotationHandler(quotSvc),
 		Invoice:   handler.NewInvoiceHandler(invSvc),
-		Order:     handler.NewOrderHandler(ordSvc),
+		Order:     handler.NewOrderHandler(ordSvc, invSvc),
 	}
 	RegisterRoutes(r, secret, policy, h)
-	_ = SeedInitialData(context.Background(), repo)
+	if seedMemoryDemo {
+		_ = SeedInitialData(context.Background(), repo)
+	}
 
 	return &Module{Repo: repo, ProductSvc: prodSvc, OrderSvc: ordSvc}
 }

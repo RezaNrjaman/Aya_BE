@@ -27,9 +27,9 @@ type InvoiceItem struct {
 }
 
 type Invoice struct {
-	ID          int           `json:"id"`
-	InvoiceNo   string        `json:"invoice_no"`
-	QuotationID *int          `json:"quotation_id,omitempty"`
+	ID          int    `json:"id"`
+	InvoiceNo   string `json:"invoice_no"`
+	QuotationID *int   `json:"quotation_id,omitempty"`
 	// PartnerID is the owning tenant (ARY-001); derived from the approved
 	// quotation or the authenticated actor, never from the request body.
 	PartnerID   *int          `json:"partner_id,omitempty"`

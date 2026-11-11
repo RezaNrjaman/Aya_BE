@@ -37,6 +37,13 @@ func (s *CartService) GetCart(ctx context.Context, sessionID string) (*dto.CartR
 	return toCartResponse(c), nil
 }
 
+func samePartner(a, b *int) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
+
 func (s *CartService) AddItem(ctx context.Context, sessionID string, req dto.AddToCartRequest) (*dto.CartResponse, error) {
 	if req.Quantity <= 0 {
 		return nil, domain.ErrInvalidQuantity
@@ -50,7 +57,9 @@ func (s *CartService) AddItem(ctx context.Context, sessionID string, req dto.Add
 		return nil, err
 	}
 	c.AddItem(prod.ID, prod.Name, prod.Price, req.Quantity)
-	_ = s.repo.SaveCart(ctx, c)
+	if err := s.repo.SaveCart(ctx, c); err != nil {
+		return nil, err
+	}
 	return toCartResponse(c), nil
 }
 
@@ -62,7 +71,9 @@ func (s *CartService) UpdateItem(ctx context.Context, sessionID string, productI
 	if err := c.UpdateQuantity(productID, qty); err != nil {
 		return nil, err
 	}
-	_ = s.repo.SaveCart(ctx, c)
+	if err := s.repo.SaveCart(ctx, c); err != nil {
+		return nil, err
+	}
 	return toCartResponse(c), nil
 }
 
@@ -74,7 +85,9 @@ func (s *CartService) RemoveItem(ctx context.Context, sessionID string, productI
 	if !c.RemoveItem(productID) {
 		return nil, domain.ErrCartItemNotFound
 	}
-	_ = s.repo.SaveCart(ctx, c)
+	if err := s.repo.SaveCart(ctx, c); err != nil {
+		return nil, err
+	}
 	return toCartResponse(c), nil
 }
 

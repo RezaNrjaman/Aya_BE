@@ -94,7 +94,18 @@ func (s *InvoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 	// A request never dictates the tenant.
 	partnerID := scope
 	if quotation != nil {
+		if req.CustomerID != quotation.CustomerID {
+			return nil, errors.New("pelanggan invoice harus sama dengan pelanggan quotation")
+		}
 		partnerID = quotation.PartnerID
+	}
+	if err := ensureCustomerTenant(ctx, s.repo, req.CustomerID, partnerID); err != nil {
+		return nil, err
+	}
+	for _, item := range items {
+		if err := ensureProductTenant(ctx, s.repo, item.ProductID, partnerID); err != nil {
+			return nil, err
+		}
 	}
 	inv := &domain.Invoice{
 		InvoiceNo:   formatInvoiceNo(int(time.Now().UnixNano() % 10000)),

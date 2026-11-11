@@ -9,24 +9,26 @@ import (
 )
 
 func (p *PostgresRepository) CreateQuotation(ctx context.Context, q *domain.Quotation) error {
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
 	sql := `INSERT INTO quotations (quotation_no, unit_usaha_id, partner_id, customer_id, total_amount, status, valid_until, created_at, updated_at)
 	        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW()) RETURNING id, created_at, updated_at`
-	if err := p.pool.QueryRow(ctx, sql, q.QuotationNo, q.UnitUsahaID, q.PartnerID, q.CustomerID, q.TotalAmount, q.Status, q.ValidUntil).
+	if err := tx.QueryRow(ctx, sql, q.QuotationNo, q.UnitUsahaID, q.PartnerID, q.CustomerID, q.TotalAmount, q.Status, q.ValidUntil).
 		Scan(&q.ID, &q.CreatedAt, &q.UpdatedAt); err != nil {
 		return err
 	}
-	return p.insertQuotationItems(ctx, q.ID, q.Items)
-}
-
-func (p *PostgresRepository) insertQuotationItems(ctx context.Context, qID int, items []domain.QuotationItem) error {
-	itemQ := `INSERT INTO quotation_items (quotation_id, product_id, item_name, quantity, unit_price, subtotal) VALUES ($1, $2, $3, $4, $5, $6)`
-	for i := range items {
-		items[i].QuotationID = qID
-		if err := p.pool.QueryRow(ctx, itemQ+` RETURNING id`, qID, items[i].ProductID, items[i].ItemName, items[i].Quantity, items[i].UnitPrice, items[i].Subtotal).Scan(&items[i].ID); err != nil {
+	itemQ := `INSERT INTO quotation_items (quotation_id, product_id, item_name, quantity, unit_price, subtotal) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`
+	for i := range q.Items {
+		q.Items[i].QuotationID = q.ID
+		if err := tx.QueryRow(ctx, itemQ, q.ID, q.Items[i].ProductID, q.Items[i].ItemName, q.Items[i].Quantity, q.Items[i].UnitPrice, q.Items[i].Subtotal).Scan(&q.Items[i].ID); err != nil {
 			return err
 		}
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 func (p *PostgresRepository) GetQuotationByID(ctx context.Context, id int) (*domain.Quotation, error) {

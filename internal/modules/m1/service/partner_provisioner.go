@@ -141,3 +141,8 @@ func (p *PartnerProvisioner) LinkPartnerUser(ctx context.Context, userID, partne
 	existing.PartnerID = &partnerID
 	return p.userRepo.Update(ctx, existing)
 }
+
+// SetPartnerStatus applies suspension to every member of the tenant.
+func (p *PartnerProvisioner) SetPartnerStatus(ctx context.Context, partnerID int, active bool) error {
+	return p.userRepo.SetPartnerUsersSuspended(ctx, partnerID, !active)
+}

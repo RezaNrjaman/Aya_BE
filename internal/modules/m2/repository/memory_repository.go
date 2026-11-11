@@ -13,15 +13,22 @@ type InMemoryUnitRepository struct {
 	mu             sync.RWMutex
 	units          map[int]domain.BusinessUnit
 	divisions      map[int]domain.Division
+	categories     map[string]int
+	categoryRows   map[int]domain.BusinessCategory
+	nextCategoryID int
 	nextID         int
 	nextDivisionID int
 }
 
 func NewInMemoryUnitRepository() *InMemoryUnitRepository {
 	return &InMemoryUnitRepository{
-		units:     make(map[int]domain.BusinessUnit),
-		divisions: make(map[int]domain.Division),
-		nextID:    1, nextDivisionID: 1,
+		units:          make(map[int]domain.BusinessUnit),
+		divisions:      make(map[int]domain.Division),
+		categories:     make(map[string]int),
+		categoryRows:   make(map[int]domain.BusinessCategory),
+		nextCategoryID: 1,
+		nextID:         1,
+		nextDivisionID: 1,
 	}
 }
 
@@ -118,6 +125,26 @@ func (r *InMemoryUnitRepository) ListActive(ctx context.Context) ([]domain.Busin
 	return active, nil
 }
 
+func (r *InMemoryUnitRepository) GetOrCreateCategoryID(ctx context.Context, name string) (*int, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	id, ok := r.categories[strings.ToLower(name)]
+	if !ok {
+		id = r.nextCategoryID
+		r.nextCategoryID++
+		r.categories[strings.ToLower(name)] = id
+	}
+	return &id, nil
+}
+
+func (r *InMemoryUnitRepository) ValidatePartnerDivision(ctx context.Context, partnerID int, divisionID *int) error {
+	return nil
+}
+
 func (r *InMemoryUnitRepository) SetStatus(ctx context.Context, id int, active bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -143,7 +170,7 @@ func (r *InMemoryUnitRepository) CreateDivision(ctx context.Context, d *domain.D
 	for _, other := range r.divisions {
 		sameTenant := (d.PartnerID == nil && other.PartnerID == nil) ||
 			(d.PartnerID != nil && other.PartnerID != nil && *d.PartnerID == *other.PartnerID)
-		if sameTenant && strings.EqualFold(other.Name, d.Name) {
+		if sameTenant && other.CategoryID == d.CategoryID && strings.EqualFold(other.Name, d.Name) {
 			return domain.ErrDuplicateDivision
 		}
 	}
@@ -245,4 +272,106 @@ func (r *InMemoryUnitRepository) CountDivisionReferences(ctx context.Context, id
 		}
 	}
 	return 0, units, nil
+}
+
+func (r *InMemoryUnitRepository) CreateCategory(ctx context.Context, c *domain.BusinessCategory) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	unit, ok := r.units[c.UnitUsahaID]
+	if !ok || unit.PartnerID == nil || c.PartnerID == nil || *unit.PartnerID != *c.PartnerID {
+		return domain.ErrUnitNotFound
+	}
+	for _, existing := range r.categoryRows {
+		if existing.UnitUsahaID == c.UnitUsahaID && strings.EqualFold(existing.Name, c.Name) {
+			return domain.ErrDuplicateDivision
+		}
+	}
+	c.ID = r.nextCategoryID
+	r.nextCategoryID++
+	c.IsActive = true
+	c.CreatedAt = time.Now().UTC()
+	c.UpdatedAt = c.CreatedAt
+	r.categoryRows[c.ID] = *c
+	return nil
+}
+
+func (r *InMemoryUnitRepository) ListCategories(ctx context.Context, unitID *int, partnerID *int, search string, limit, offset int) ([]domain.BusinessCategory, int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	items := []domain.BusinessCategory{}
+	for _, c := range r.categoryRows {
+		if unitID != nil && c.UnitUsahaID != *unitID {
+			continue
+		}
+		if partnerID != nil && (c.PartnerID == nil || *c.PartnerID != *partnerID) {
+			continue
+		}
+		if search != "" && !strings.Contains(strings.ToLower(c.Name), strings.ToLower(search)) {
+			continue
+		}
+		items = append(items, c)
+	}
+	total := len(items)
+	if offset >= total {
+		return []domain.BusinessCategory{}, total, nil
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	return items[offset:end], total, nil
+}
+
+func (r *InMemoryUnitRepository) GetCategoryByID(ctx context.Context, id int) (*domain.BusinessCategory, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	c, ok := r.categoryRows[id]
+	if !ok {
+		return nil, domain.ErrUnitNotFound
+	}
+	return &c, nil
+}
+
+func (r *InMemoryUnitRepository) UpdateCategory(ctx context.Context, c *domain.BusinessCategory) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	old, ok := r.categoryRows[c.ID]
+	if !ok {
+		return domain.ErrUnitNotFound
+	}
+	c.CreatedAt = old.CreatedAt
+	c.UpdatedAt = time.Now().UTC()
+	c.UnitUsahaID = old.UnitUsahaID
+	c.PartnerID = old.PartnerID
+	r.categoryRows[c.ID] = *c
+	return nil
+}
+
+func (r *InMemoryUnitRepository) SetCategoryStatus(ctx context.Context, id int, active bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c, ok := r.categoryRows[id]
+	if !ok {
+		return domain.ErrUnitNotFound
+	}
+	c.IsActive = active
+	c.UpdatedAt = time.Now().UTC()
+	r.categoryRows[id] = c
+	return nil
+}
+
+func (r *InMemoryUnitRepository) ValidateCategoryPlacement(ctx context.Context, partnerID int, unitID, categoryID int) error {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	u, uok := r.units[unitID]
+	c, cok := r.categoryRows[categoryID]
+	if !uok || !cok || u.PartnerID == nil || *u.PartnerID != partnerID ||
+		c.PartnerID == nil || *c.PartnerID != partnerID || c.UnitUsahaID != unitID || !u.IsActive || !c.IsActive {
+		return domain.ErrUnitNotFound
+	}
+	return nil
+}
+
+func (r *InMemoryUnitRepository) ValidateDivisionPlacement(ctx context.Context, partnerID, unitID, categoryID int) error {
+	return r.ValidateCategoryPlacement(ctx, partnerID, unitID, categoryID)
 }

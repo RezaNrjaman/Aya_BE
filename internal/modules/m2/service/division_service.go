@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"araya-business-hub/be/internal/modules/m2/domain"
@@ -21,15 +22,16 @@ func NewDivisionService(repo repository.DivisionRepository, auditSvc *audit.Serv
 }
 
 func (s *DivisionService) CreateDivision(ctx context.Context, req dto.CreateDivisionRequest, actor string, scope *int) (*domain.Division, error) {
-	d := &domain.Division{Name: req.Name, Description: req.Description}
-	if scope != nil {
-		// ARY-006: partner-scoped actors always own their divisions; a
-		// request-body partner_id is never trusted.
-		d.PartnerID = scope
-	} else {
-		d.PartnerID = req.PartnerID // platform admins may assign a tenant explicitly
+	d := &domain.Division{Name: req.Name, Description: req.Description, UnitUsahaID: req.UnitUsahaID, CategoryID: req.CategoryID}
+	if scope == nil {
+		return nil, errors.New("divisi hanya dapat dibuat oleh Partner")
 	}
+	// Tenant ownership is derived from the authenticated actor.
+	d.PartnerID = scope
 	if err := d.Validate(); err != nil {
+		return nil, err
+	}
+	if err := s.repo.ValidateDivisionPlacement(ctx, *scope, d.UnitUsahaID, d.CategoryID); err != nil {
 		return nil, err
 	}
 	if err := s.repo.CreateDivision(ctx, d); err != nil {
@@ -63,6 +65,12 @@ func applyDivisionUpdates(d *domain.Division, req dto.UpdateDivisionRequest) {
 	if req.Description != nil {
 		d.Description = *req.Description
 	}
+	if req.UnitUsahaID != nil {
+		d.UnitUsahaID = *req.UnitUsahaID
+	}
+	if req.CategoryID != nil {
+		d.CategoryID = *req.CategoryID
+	}
 }
 
 func (s *DivisionService) UpdateDivision(ctx context.Context, id int, req dto.UpdateDivisionRequest, actor string, scope *int) (*domain.Division, error) {
@@ -74,6 +82,12 @@ func (s *DivisionService) UpdateDivision(ctx context.Context, id int, req dto.Up
 		return nil, domain.ErrDivisionNotFound
 	}
 	applyDivisionUpdates(d, req)
+	if scope == nil {
+		return nil, errors.New("divisi hanya dapat dikelola oleh Partner")
+	}
+	if err := s.repo.ValidateDivisionPlacement(ctx, *scope, d.UnitUsahaID, d.CategoryID); err != nil {
+		return nil, err
+	}
 	if err := d.Validate(); err != nil {
 		return nil, err
 	}

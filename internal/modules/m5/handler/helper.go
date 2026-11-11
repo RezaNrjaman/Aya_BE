@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"net/http"
 	"strconv"
 	"strings"
 
 	"araya-business-hub/be/internal/platform/response"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 func getSessionID(c *gin.Context) string {
@@ -18,7 +20,10 @@ func getSessionID(c *gin.Context) string {
 	if s, err := c.Cookie("session_id"); err == nil && strings.TrimSpace(s) != "" {
 		return strings.TrimSpace(s)
 	}
-	return "guest-default-session"
+	sid := uuid.NewString()
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie("session_id", sid, 60*60*24*30, "/", "", c.Request.TLS != nil, true)
+	return sid
 }
 
 func parseID(c *gin.Context, param, errMsg string) (int, *response.AppError) {

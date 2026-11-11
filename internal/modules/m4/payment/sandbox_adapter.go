@@ -16,9 +16,7 @@ type SandboxAdapter struct {
 }
 
 func NewSandboxAdapter(secretKey string) *SandboxAdapter {
-	if secretKey == "" {
-		secretKey = "sandbox-secret-key-12345"
-	}
+	// Fail closed: an empty secret disables signature generation/verification.
 	return &SandboxAdapter{secretKey: secretKey}
 }
 
@@ -27,17 +25,26 @@ func formatPaymentRef(invoiceID int) string {
 }
 
 func (a *SandboxAdapter) GenerateSignature(payload []byte) string {
+	if a == nil || len(a.secretKey) < 32 {
+		return ""
+	}
 	mac := hmac.New(sha256.New, []byte(a.secretKey))
 	mac.Write(payload)
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
 func (a *SandboxAdapter) VerifySignature(payload []byte, signature string) bool {
+	if signature == "" {
+		return false
+	}
 	expected := a.GenerateSignature(payload)
-	return hmac.Equal([]byte(expected), []byte(signature))
+	return expected != "" && hmac.Equal([]byte(expected), []byte(signature))
 }
 
 func (a *SandboxAdapter) ProcessPayment(invoiceID int, amount int64, method string, simFail bool) (*domain.Payment, error) {
+	if a == nil || len(a.secretKey) < 32 {
+		return nil, errors.New("SANDBOX_CALLBACK_SECRET wajib diisi minimal 32 karakter")
+	}
 	if amount <= 0 {
 		return nil, errors.New("nominal pembayaran harus lebih dari 0")
 	}

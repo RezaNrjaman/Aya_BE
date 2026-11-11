@@ -4,6 +4,7 @@ type CreateProductRequest struct {
 	UnitUsahaID int    `json:"unit_usaha_id" binding:"required"`
 	PartnerID   *int   `json:"partner_id,omitempty"`
 	Name        string `json:"name" binding:"required"`
+	ProductType string `json:"product_type" binding:"required,oneof=barang jasa"`
 	Category    string `json:"category,omitempty"`
 	Description string `json:"description,omitempty"`
 	Price       int64  `json:"price" binding:"required"`
@@ -12,6 +13,7 @@ type CreateProductRequest struct {
 }
 
 type UpdateProductRequest struct {
+	ProductType *string `json:"product_type,omitempty" binding:"omitempty,oneof=barang jasa"`
 	Name        *string `json:"name,omitempty"`
 	Category    *string `json:"category,omitempty"`
 	Description *string `json:"description,omitempty"`

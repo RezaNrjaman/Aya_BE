@@ -1,6 +1,8 @@
 package m4
 
 import (
+	"time"
+
 	"araya-business-hub/be/internal/modules/m4/handler"
 	"araya-business-hub/be/internal/platform/middleware"
 	"araya-business-hub/be/internal/platform/rbac"
@@ -41,6 +43,7 @@ func registerDocRoutes(rg *gin.RouterGroup, policy *rbac.PolicyService, h Handle
 
 func registerOrderAdminRoutes(rg *gin.RouterGroup, policy *rbac.PolicyService, h Handlers) {
 	rg.GET("/admin/orders", middleware.RequirePermission(policy, "m4.orders.manage"), h.Order.ListOrders)
+	rg.POST("/partner/orders", middleware.RequirePermission(policy, "m4.orders.manage"), h.Order.CreateOrder)
 	rg.GET("/orders/:id", middleware.RequirePermission(policy, "m4.orders.manage"), h.Order.GetOrder)
 	rg.POST("/orders/:id/process", middleware.RequirePermission(policy, "m4.orders.manage"), h.Order.ProcessOrder)
 	rg.POST("/orders/:id/complete", middleware.RequirePermission(policy, "m4.orders.manage"), h.Order.CompleteOrder)
@@ -50,15 +53,18 @@ func registerOrderAdminRoutes(rg *gin.RouterGroup, policy *rbac.PolicyService, h
 // RegisterRoutes registers all M4 routes into Gin.
 func RegisterRoutes(r *gin.Engine, jwtSecret string, policy *rbac.PolicyService, h Handlers) {
 	m4 := r.Group("/api/m4/v1")
-	// Contract K-05: Read active products
+	// Public guest checkout contract. Partner back-office creation uses
+	// /partner/orders below and is protected by tenant authentication.
 	m4.GET("/products", h.Product.ListActiveProducts)
-	// Contract K-04: Create order from checkout
 	m4.POST("/orders", h.Order.CreateOrder)
+	limiter := middleware.NewRateLimiter()
+	m4.POST("/public/orders/track", middleware.RateLimit(limiter, 10, time.Minute), h.Order.TrackPublicOrder)
+	m4.POST("/public/orders/:order_no/pay", middleware.RateLimit(limiter, 5, time.Minute), h.Order.PayPublicOrder)
 	// Payment webhook / callback
 	m4.POST("/payments/callback", h.Invoice.HandlePaymentCallback)
 
 	protected := m4.Group("")
-	protected.Use(middleware.Authenticate(jwtSecret))
+	protected.Use(middleware.Authenticate(jwtSecret), middleware.RequirePartnerTenant())
 	registerProductAndCustomerRoutes(protected, policy, h)
 	registerDocRoutes(protected, policy, h)
 	registerOrderAdminRoutes(protected, policy, h)

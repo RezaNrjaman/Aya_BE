@@ -11,6 +11,7 @@ type Repository interface {
 	CreateProduct(ctx context.Context, p *domain.Product) error
 	GetProductByID(ctx context.Context, id int) (*domain.Product, error)
 	UpdateProduct(ctx context.Context, p *domain.Product) error
+	ValidateUnitOwnership(ctx context.Context, unitID int, partnerID *int) error
 	// ListProducts: partnerID narrows the result to one tenant (ARY-001);
 	// nil means platform-wide (super admin / public catalog).
 	ListProducts(ctx context.Context, unitID *int, category, search string, activeOnly bool, partnerID *int, limit, offset int) ([]domain.Product, int, error)
@@ -18,6 +19,7 @@ type Repository interface {
 	// Customers
 	CreateCustomer(ctx context.Context, c *domain.Customer) error
 	GetCustomerByID(ctx context.Context, id int) (*domain.Customer, error)
+	GetCustomerByEmail(ctx context.Context, email string, partnerID *int) (*domain.Customer, error)
 	ListCustomers(ctx context.Context, search string, partnerID *int, limit, offset int) ([]domain.Customer, int, error)
 
 	// Quotations
@@ -40,7 +42,9 @@ type Repository interface {
 
 	// Orders
 	CreateOrder(ctx context.Context, o *domain.Order) error
+	CreateOrderWithInvoice(ctx context.Context, o *domain.Order, inv *domain.Invoice) error
 	GetOrderByID(ctx context.Context, id int) (*domain.Order, error)
+	GetOrderByOrderNoAndEmail(ctx context.Context, orderNo, email string) (*domain.Order, error)
 	GetOrderByIdempotency(ctx context.Context, key string) (*domain.Order, error)
 	UpdateOrder(ctx context.Context, o *domain.Order) error
 	ListOrders(ctx context.Context, status string, partnerID *int, limit, offset int) ([]domain.Order, int, error)

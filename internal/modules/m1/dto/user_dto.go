@@ -5,9 +5,9 @@ type CreateUserRequest struct {
 	Password    string `json:"password" binding:"required"`
 	Name        string `json:"name" binding:"required"`
 	Phone       string `json:"phone,omitempty"`
-	DivisionID  *int   `json:"division_id,omitempty"`
-	Role        string `json:"role,omitempty"`
-	UnitUsahaID *int   `json:"unit_usaha_id,omitempty"`
+	DivisionID  *int   `json:"division_id" binding:"required"`
+	Role        string `json:"role" binding:"required"`
+	UnitUsahaID *int   `json:"unit_usaha_id" binding:"required"`
 }
 
 type UpdateUserRequest struct {
@@ -31,7 +31,8 @@ type CreateRoleRequest struct {
 	PermissionKeys []string `json:"permission_keys,omitempty"`
 	// PartnerID is honored only for platform-wide actors (ARY-007); partner
 	// actors always own the roles they create.
-	PartnerID *int `json:"partner_id,omitempty"`
+	PartnerID  *int `json:"partner_id,omitempty"`
+	DivisionID *int `json:"division_id" binding:"required"`
 }
 
 type UpdateRoleRequest struct {

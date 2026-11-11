@@ -9,24 +9,101 @@ import (
 )
 
 func (p *PostgresRepository) CreateOrder(ctx context.Context, o *domain.Order) error {
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
 	sql := `INSERT INTO orders (order_no, partner_id, customer_id, invoice_id, total_amount, status, idempotency_key, created_at, updated_at)
 	        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW()) RETURNING id, created_at, updated_at`
-	if err := p.pool.QueryRow(ctx, sql, o.OrderNo, o.PartnerID, o.CustomerID, o.InvoiceID, o.TotalAmount, o.Status, o.IdempotencyKey).
+	if err := tx.QueryRow(ctx, sql, o.OrderNo, o.PartnerID, o.CustomerID, o.InvoiceID, o.TotalAmount, o.Status, o.IdempotencyKey).
 		Scan(&o.ID, &o.CreatedAt, &o.UpdatedAt); err != nil {
 		return err
 	}
-	return p.insertOrderItems(ctx, o.ID, o.Items)
-}
-
-func (p *PostgresRepository) insertOrderItems(ctx context.Context, oID int, items []domain.OrderItem) error {
-	itemQ := `INSERT INTO order_items (order_id, product_id, item_name, quantity, unit_price, subtotal) VALUES ($1, $2, $3, $4, $5, $6)`
-	for i := range items {
-		items[i].OrderID = oID
-		if err := p.pool.QueryRow(ctx, itemQ+` RETURNING id`, oID, items[i].ProductID, items[i].ItemName, items[i].Quantity, items[i].UnitPrice, items[i].Subtotal).Scan(&items[i].ID); err != nil {
+	itemQ := `INSERT INTO order_items (order_id, product_id, item_name, quantity, unit_price, subtotal) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`
+	for i := range o.Items {
+		o.Items[i].OrderID = o.ID
+		if err := tx.QueryRow(ctx, itemQ, o.ID, o.Items[i].ProductID, o.Items[i].ItemName, o.Items[i].Quantity, o.Items[i].UnitPrice, o.Items[i].Subtotal).Scan(&o.Items[i].ID); err != nil {
 			return err
 		}
 	}
-	return nil
+	return tx.Commit(ctx)
+}
+
+func (p *PostgresRepository) CreateOrderWithInvoice(ctx context.Context, o *domain.Order, inv *domain.Invoice) error {
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// Reserve physical inventory atomically. Services do not consume stock.
+	for _, item := range o.Items {
+		var productType string
+		var active bool
+		var stock int
+		err := tx.QueryRow(ctx, `SELECT COALESCE(product_type, 'barang'), is_active, stock
+			FROM products WHERE id = $1 FOR UPDATE`, item.ProductID).Scan(&productType, &active, &stock)
+		if err != nil {
+			return err
+		}
+		if !active {
+			return domain.ErrProductNotFound
+		}
+		if productType != "jasa" {
+			if stock < item.Quantity {
+				return errors.New("stok produk tidak mencukupi")
+			}
+			if _, err := tx.Exec(ctx, `UPDATE products SET stock = stock - $1, updated_at = NOW()
+				WHERE id = $2`, item.Quantity, item.ProductID); err != nil {
+				return err
+			}
+		}
+	}
+
+	err = tx.QueryRow(ctx, `INSERT INTO orders
+		(order_no, partner_id, customer_id, total_amount, status, idempotency_key, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,NOW(),NOW()) RETURNING id, created_at, updated_at`,
+		o.OrderNo, o.PartnerID, o.CustomerID, o.TotalAmount, o.Status, o.IdempotencyKey).
+		Scan(&o.ID, &o.CreatedAt, &o.UpdatedAt)
+	if err != nil {
+		return err
+	}
+
+	itemQ := `INSERT INTO order_items (order_id, product_id, item_name, quantity, unit_price, subtotal)
+		VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`
+	for i := range o.Items {
+		o.Items[i].OrderID = o.ID
+		if err := tx.QueryRow(ctx, itemQ, o.ID, o.Items[i].ProductID, o.Items[i].ItemName,
+			o.Items[i].Quantity, o.Items[i].UnitPrice, o.Items[i].Subtotal).Scan(&o.Items[i].ID); err != nil {
+			return err
+		}
+	}
+
+	err = tx.QueryRow(ctx, `INSERT INTO invoices
+		(invoice_no, partner_id, customer_id, total_amount, status, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,NOW(),NOW()) RETURNING id, created_at, updated_at`,
+		inv.InvoiceNo, inv.PartnerID, inv.CustomerID, inv.TotalAmount, inv.Status).
+		Scan(&inv.ID, &inv.CreatedAt, &inv.UpdatedAt)
+	if err != nil {
+		return err
+	}
+
+	invItemQ := `INSERT INTO invoice_items (invoice_id, product_id, item_name, quantity, unit_price, subtotal)
+		VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`
+	for i := range inv.Items {
+		inv.Items[i].InvoiceID = inv.ID
+		if err := tx.QueryRow(ctx, invItemQ, inv.ID, inv.Items[i].ProductID, inv.Items[i].ItemName,
+			inv.Items[i].Quantity, inv.Items[i].UnitPrice, inv.Items[i].Subtotal).Scan(&inv.Items[i].ID); err != nil {
+			return err
+		}
+	}
+	o.InvoiceID = &inv.ID
+	if _, err := tx.Exec(ctx, `UPDATE orders SET invoice_id = $1 WHERE id = $2`, inv.ID, o.ID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (p *PostgresRepository) GetOrderByID(ctx context.Context, id int) (*domain.Order, error) {
@@ -41,6 +118,32 @@ func (p *PostgresRepository) GetOrderByID(ctx context.Context, id int) (*domain.
 	items, err := p.loadOrderItems(ctx, o.ID)
 	o.Items = items
 	return &o, err
+}
+
+func (p *PostgresRepository) GetOrderByOrderNoAndEmail(ctx context.Context, orderNo, email string) (*domain.Order, error) {
+	q := `SELECT o.id, o.order_no, o.partner_id, o.customer_id, o.invoice_id, o.total_amount,
+	             o.status, COALESCE(o.idempotency_key, ''), o.created_at, o.updated_at
+	      FROM orders o JOIN customers c ON c.id = o.customer_id
+	      WHERE o.order_no = $1 AND LOWER(c.email) = LOWER($2)`
+	var o domain.Order
+	if err := p.pool.QueryRow(ctx, q, orderNo, email).Scan(&o.ID, &o.OrderNo, &o.PartnerID,
+		&o.CustomerID, &o.InvoiceID, &o.TotalAmount, &o.Status, &o.IdempotencyKey, &o.CreatedAt, &o.UpdatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrOrderNotFound
+		}
+		return nil, err
+	}
+	items, err := p.loadOrderItems(ctx, o.ID)
+	if err != nil {
+		return nil, err
+	}
+	o.Items = items
+	histories, err := p.GetOrderHistories(ctx, o.ID)
+	if err != nil {
+		return nil, err
+	}
+	o.Histories = histories
+	return &o, nil
 }
 
 func (p *PostgresRepository) GetOrderByIdempotency(ctx context.Context, key string) (*domain.Order, error) {
@@ -75,8 +178,8 @@ func (p *PostgresRepository) loadOrderItems(ctx context.Context, oID int) ([]dom
 }
 
 func (p *PostgresRepository) UpdateOrder(ctx context.Context, o *domain.Order) error {
-	sql := `UPDATE orders SET order_no = $1, status = $2, updated_at = NOW() WHERE id = $3`
-	ct, err := p.pool.Exec(ctx, sql, o.OrderNo, o.Status, o.ID)
+	sql := `UPDATE orders SET order_no = $1, status = $2, invoice_id = $3, updated_at = NOW() WHERE id = $4`
+	ct, err := p.pool.Exec(ctx, sql, o.OrderNo, o.Status, o.InvoiceID, o.ID)
 	if err != nil {
 		return err
 	}

@@ -70,13 +70,17 @@ func (p *Permission) Validate() error {
 
 // Role represents a configurable dynamic role in the system.
 type Role struct {
-	ID          int          `json:"id"`
-	Name        string       `json:"name"`         // Unique slug, e.g. "admin", "manajer", "p7_finance"
-	DisplayName string       `json:"display_name"` // e.g. "Administrator Sistem", "Finance"
-	Description string       `json:"description"`
+	ID          int    `json:"id"`
+	Name        string `json:"name"`         // Unique slug, e.g. "admin", "manajer", "p7_finance"
+	DisplayName string `json:"display_name"` // e.g. "Administrator Sistem", "Finance"
+	Description string `json:"description"`
 	// PartnerID identifies the owning tenant (ARY-007). NULL marks a system
 	// role shared by the whole platform.
-	PartnerID   *int         `json:"partner_id,omitempty"`
+	PartnerID    *int   `json:"partner_id,omitempty"`
+	DivisionID   *int   `json:"division_id,omitempty"`
+	DivisionName string `json:"division_name,omitempty"`
+	UnitName     string `json:"unit_name,omitempty"`
+	CategoryName string `json:"category_name,omitempty"`
 	// IsSystem marks seeded platform roles. They can never be edited,
 	// deactivated, or deleted through the role-management flows.
 	IsSystem    bool         `json:"is_system"`

@@ -11,6 +11,7 @@ type Handlers struct {
 	Unit      *handler.UnitHandler
 	Dashboard *handler.DashboardHandler
 	Division  *handler.DivisionHandler
+	Category  *handler.CategoryHandler
 }
 
 func registerAdminUnitRoutes(rg *gin.RouterGroup, policy *rbac.PolicyService, h *handler.UnitHandler) {
@@ -23,6 +24,14 @@ func registerAdminUnitRoutes(rg *gin.RouterGroup, policy *rbac.PolicyService, h 
 }
 
 // registerDivisionRoutes exposes partner-owned division CRUD (ARY-006).
+func registerCategoryRoutes(rg *gin.RouterGroup, policy *rbac.PolicyService, h *handler.CategoryHandler) {
+	rg.GET("/categories", middleware.RequirePermission(policy, "m2.categories.read"), h.List)
+	rg.POST("/categories", middleware.RequirePermission(policy, "m2.categories.manage"), h.Create)
+	rg.PATCH("/categories/:id", middleware.RequirePermission(policy, "m2.categories.manage"), h.Update)
+	rg.POST("/categories/:id/deactivate", middleware.RequirePermission(policy, "m2.categories.manage"), h.Deactivate)
+	rg.POST("/categories/:id/activate", middleware.RequirePermission(policy, "m2.categories.manage"), h.Activate)
+}
+
 func registerDivisionRoutes(rg *gin.RouterGroup, policy *rbac.PolicyService, h *handler.DivisionHandler) {
 	rg.GET("/divisions", middleware.RequirePermission(policy, "m2.divisions.read"), h.ListDivisions)
 	rg.POST("/divisions", middleware.RequirePermission(policy, "m2.divisions.manage"), h.CreateDivision)
@@ -40,8 +49,9 @@ func RegisterRoutes(r *gin.Engine, jwtSecret string, policy *rbac.PolicyService,
 	m2.GET("/business-units", h.Unit.ListActiveUnits)
 
 	protected := m2.Group("")
-	protected.Use(middleware.Authenticate(jwtSecret))
+	protected.Use(middleware.Authenticate(jwtSecret), middleware.RequirePartnerTenant())
 	registerAdminUnitRoutes(protected, policy, h.Unit)
+	registerCategoryRoutes(protected, policy, h.Category)
 	registerDivisionRoutes(protected, policy, h.Division)
 	// Contract K-03: Dashboard summary
 	protected.GET("/dashboard-summary", middleware.RequirePermission(policy, "m2.dashboard.read"), h.Dashboard.GetSummary)

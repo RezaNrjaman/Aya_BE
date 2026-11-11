@@ -24,12 +24,19 @@ func (p *PostgresRepository) CreateServiceRequest(ctx context.Context, req *doma
 		req.ServiceType, req.Description, req.Status).Scan(&req.ID, &req.CreatedAt, &req.UpdatedAt)
 }
 
-func (p *PostgresRepository) GetServiceRequestByID(ctx context.Context, id int) (*domain.ServiceRequest, error) {
-	q := `SELECT id, unit_usaha_id, customer_name, customer_email, COALESCE(customer_phone, ''), COALESCE(service_type, ''),
-	             description, status, created_at, updated_at FROM service_requests WHERE id = $1`
+func (p *PostgresRepository) GetServiceRequestByID(ctx context.Context, id int, partnerID *int, restricted bool) (*domain.ServiceRequest, error) {
+	q := `SELECT sr.id, bu.partner_id, sr.unit_usaha_id, sr.customer_name, sr.customer_email,
+	             COALESCE(sr.customer_phone, ''), COALESCE(sr.service_type, ''), sr.description,
+	             sr.status, sr.created_at, sr.updated_at
+	      FROM service_requests sr
+	      JOIN business_units bu ON bu.id = sr.unit_usaha_id
+	      WHERE sr.id = $1
+	        AND ($3 = FALSE OR ($2::int IS NOT NULL AND bu.partner_id = $2))`
 	var req domain.ServiceRequest
-	err := p.pool.QueryRow(ctx, q, id).Scan(&req.ID, &req.UnitUsahaID, &req.CustomerName, &req.CustomerEmail,
-		&req.CustomerPhone, &req.ServiceType, &req.Description, &req.Status, &req.CreatedAt, &req.UpdatedAt)
+	err := p.pool.QueryRow(ctx, q, id, partnerID, restricted).Scan(
+		&req.ID, &req.PartnerID, &req.UnitUsahaID, &req.CustomerName, &req.CustomerEmail,
+		&req.CustomerPhone, &req.ServiceType, &req.Description, &req.Status, &req.CreatedAt, &req.UpdatedAt,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrRequestNotFound
@@ -39,9 +46,12 @@ func (p *PostgresRepository) GetServiceRequestByID(ctx context.Context, id int) 
 	return &req, nil
 }
 
-func (p *PostgresRepository) UpdateServiceRequest(ctx context.Context, req *domain.ServiceRequest) error {
-	q := `UPDATE service_requests SET status = $1, updated_at = NOW() WHERE id = $2`
-	ct, err := p.pool.Exec(ctx, q, req.Status, req.ID)
+func (p *PostgresRepository) UpdateServiceRequest(ctx context.Context, req *domain.ServiceRequest, partnerID *int, restricted bool) error {
+	q := `UPDATE service_requests sr SET status = $1, updated_at = NOW()
+	      FROM business_units bu
+	      WHERE sr.id = $2 AND bu.id = sr.unit_usaha_id
+	        AND ($4 = FALSE OR ($3::int IS NOT NULL AND bu.partner_id = $3))`
+	ct, err := p.pool.Exec(ctx, q, req.Status, req.ID, partnerID, restricted)
 	if err != nil {
 		return err
 	}
@@ -51,42 +61,44 @@ func (p *PostgresRepository) UpdateServiceRequest(ctx context.Context, req *doma
 	return nil
 }
 
-func (p *PostgresRepository) ListServiceRequests(ctx context.Context, unitID *int, status string, limit, offset int) ([]domain.ServiceRequest, int, error) {
-	countQ := `SELECT count(*) FROM service_requests WHERE ($1::int IS NULL OR unit_usaha_id = $1) AND ($2 = '' OR status = $2)`
+func (p *PostgresRepository) ListServiceRequests(ctx context.Context, unitID, partnerID *int, restricted bool, status string, limit, offset int) ([]domain.ServiceRequest, int, error) {
+	filter := `FROM service_requests sr JOIN business_units bu ON bu.id = sr.unit_usaha_id
+	           WHERE ($1::int IS NULL OR sr.unit_usaha_id = $1)
+	             AND ($2 = '' OR sr.status = $2)
+	             AND ($4 = FALSE OR ($3::int IS NOT NULL AND bu.partner_id = $3))`
+	countQ := `SELECT count(*) ` + filter
 	var total int
-	if err := p.pool.QueryRow(ctx, countQ, unitID, status).Scan(&total); err != nil {
+	if err := p.pool.QueryRow(ctx, countQ, unitID, status, partnerID, restricted).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	q := `SELECT id, unit_usaha_id, customer_name, customer_email, COALESCE(customer_phone, ''), COALESCE(service_type, ''),
-	             description, status, created_at, updated_at
-	      FROM service_requests WHERE ($1::int IS NULL OR unit_usaha_id = $1) AND ($2 = '' OR status = $2)
-	      ORDER BY id DESC LIMIT $3 OFFSET $4`
-	rows, err := p.pool.Query(ctx, q, unitID, status, limit, offset)
+	q := `SELECT sr.id, bu.partner_id, sr.unit_usaha_id, sr.customer_name, sr.customer_email,
+	             COALESCE(sr.customer_phone, ''), COALESCE(sr.service_type, ''), sr.description,
+	             sr.status, sr.created_at, sr.updated_at ` + filter + `
+	      ORDER BY sr.id DESC LIMIT $5 OFFSET $6`
+	rows, err := p.pool.Query(ctx, q, unitID, status, partnerID, restricted, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
-	reqs, err := p.collectServiceRequests(rows)
-	return reqs, total, err
-}
-
-func (p *PostgresRepository) collectServiceRequests(rows pgx.Rows) ([]domain.ServiceRequest, error) {
-	var list []domain.ServiceRequest
+	var reqs []domain.ServiceRequest
 	for rows.Next() {
 		var req domain.ServiceRequest
-		if err := rows.Scan(&req.ID, &req.UnitUsahaID, &req.CustomerName, &req.CustomerEmail,
+		if err := rows.Scan(&req.ID, &req.PartnerID, &req.UnitUsahaID, &req.CustomerName, &req.CustomerEmail,
 			&req.CustomerPhone, &req.ServiceType, &req.Description, &req.Status, &req.CreatedAt, &req.UpdatedAt); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
-		list = append(list, req)
+		reqs = append(reqs, req)
 	}
-	return list, nil
+	return reqs, total, rows.Err()
 }
 
 func (p *PostgresRepository) GetOrCreateCart(ctx context.Context, sessionID string) (*domain.Cart, error) {
 	c, err := p.GetCartBySession(ctx, sessionID)
 	if err == nil {
 		return c, nil
+	}
+	if !errors.Is(err, domain.ErrCartEmpty) {
+		return nil, err
 	}
 	q := `INSERT INTO carts (session_id, created_at, updated_at) VALUES ($1, NOW(), NOW())
 	      ON CONFLICT (session_id) DO UPDATE SET updated_at = NOW()

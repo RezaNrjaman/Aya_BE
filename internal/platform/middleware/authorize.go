@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"errors"
+	"strings"
 
 	"araya-business-hub/be/internal/platform/rbac"
 	"araya-business-hub/be/internal/platform/response"
@@ -69,4 +70,49 @@ func resolveCurrentRole(c *gin.Context, policy *rbac.PolicyService, user *AuthUs
 	}
 	c.Abort()
 	return "", false
+}
+
+// RequirePartnerTenant restricts an endpoint to an authenticated user who is
+// attached to one active tenant. Platform administrators must never use
+// tenant-operational APIs; partner IDs are taken from verified JWT claims,
+// never from query/body input.
+func RequirePartnerTenant() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user := GetAuthUser(c)
+		if user == nil {
+			response.HandleAppError(c, response.Unauthorized("Autentikasi diperlukan"))
+			c.Abort()
+			return
+		}
+		if user.PartnerID == nil || *user.PartnerID <= 0 || strings.EqualFold(user.Role, "admin") || strings.EqualFold(user.Role, "super_admin") {
+			response.HandleAppError(c, response.Forbidden("Endpoint ini hanya tersedia untuk anggota Partner yang terhubung ke tenant"))
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
+// RequirePlatformAdmin restricts platform governance endpoints to the current
+// platform administrator role. It resolves the current role from storage so a
+// stale JWT cannot retain or gain platform privileges after role changes.
+func RequirePlatformAdmin(policy *rbac.PolicyService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user := GetAuthUser(c)
+		if user == nil {
+			response.HandleAppError(c, response.Unauthorized("Autentikasi diperlukan"))
+			c.Abort()
+			return
+		}
+		role, ok := resolveCurrentRole(c, policy, user)
+		if !ok {
+			return
+		}
+		if (!strings.EqualFold(role, "admin") && !strings.EqualFold(role, "super_admin")) || user.PartnerID != nil {
+			response.HandleAppError(c, response.Forbidden("Fitur ini hanya tersedia untuk Super Admin platform"))
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
 }

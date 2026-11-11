@@ -17,9 +17,9 @@ type Module struct {
 	Repo repository.Repository
 }
 
-func buildHandlers(repo repository.Repository, m2 client.M2Client, m4 client.M4Client, auditSvc *audit.Service) Handlers {
-	catSvc := service.NewCatalogService(m2, m4)
-	reqSvc := service.NewServiceRequestService(repo, auditSvc)
+func buildHandlers(repo repository.Repository, m2 client.M2Client, m4 client.M4Client, auditSvc *audit.Service, partnerStatus service.PartnerStatusResolver) Handlers {
+	catSvc := service.NewCatalogService(m2, m4, partnerStatus)
+	reqSvc := service.NewServiceRequestService(repo, auditSvc, catSvc)
 	cartSvc := service.NewCartService(repo, m4)
 	chkSvc := service.NewCheckoutService(repo, m4, auditSvc)
 
@@ -38,12 +38,26 @@ func resolveM5Repo(opts ...repository.Repository) repository.Repository {
 	return repository.NewInMemoryRepository()
 }
 
-func InitModule(r *gin.Engine, secret string, policy *rbac.PolicyService, auditSvc *audit.Service, m2 client.M2Client, m4 client.M4Client, repoOpt ...repository.Repository) *Module {
-	repo := resolveM5Repo(repoOpt...)
-	h := buildHandlers(repo, m2, m4, auditSvc)
+func InitModule(r *gin.Engine, secret string, policy *rbac.PolicyService, auditSvc *audit.Service, m2 client.M2Client, m4 client.M4Client, opts ...any) *Module {
+	var repo repository.Repository
+	var partnerStatus service.PartnerStatusResolver
+	hasPersistentRepo := false
+	for _, opt := range opts {
+		if r, ok := opt.(repository.Repository); ok && r != nil {
+			repo = r
+			hasPersistentRepo = true
+		}
+		if status, ok := opt.(service.PartnerStatusResolver); ok {
+			partnerStatus = status
+		}
+	}
+	repo = resolveM5Repo(repo)
+	h := buildHandlers(repo, m2, m4, auditSvc, partnerStatus)
 
 	RegisterRoutes(r, secret, policy, h)
-	_ = SeedInitialData(context.Background(), repo)
+	if !hasPersistentRepo {
+		_ = SeedInitialData(context.Background(), repo)
+	}
 
 	return &Module{Repo: repo}
 }

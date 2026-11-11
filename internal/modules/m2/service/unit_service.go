@@ -30,8 +30,7 @@ func canAccessTenantUnit(unitPartnerID *int, scope *int) bool {
 
 func (s *UnitService) CreateUnit(ctx context.Context, req dto.CreateUnitRequest, actor string, scope *int) (*domain.BusinessUnit, error) {
 	u := &domain.BusinessUnit{
-		Name: req.Name, CategoryID: req.CategoryID, CategoryName: req.CategoryName,
-		DivisionID: req.DivisionID, DivisionName: req.DivisionName, Description: req.Description,
+		Name: req.Name, Description: req.Description,
 		ContactEmail: req.ContactEmail, ContactPhone: req.ContactPhone, Address: req.Address,
 		LogoURL: req.LogoURL, IsActive: true,
 	}
@@ -40,7 +39,7 @@ func (s *UnitService) CreateUnit(ctx context.Context, req dto.CreateUnitRequest,
 		// request-body partner_id is never trusted.
 		u.PartnerID = scope
 	} else {
-		u.PartnerID = req.PartnerID // platform admins may assign a tenant explicitly
+		u.PartnerID = req.PartnerID // platform-wide actors may assign a tenant explicitly
 	}
 	if err := u.Validate(); err != nil {
 		return nil, err
@@ -76,18 +75,6 @@ func (s *UnitService) ListActiveUnits(ctx context.Context) ([]domain.BusinessUni
 func applyBasicFields(u *domain.BusinessUnit, req dto.UpdateUnitRequest) {
 	if req.Name != nil {
 		u.Name = *req.Name
-	}
-	if req.CategoryID != nil {
-		u.CategoryID = req.CategoryID
-	}
-	if req.CategoryName != nil {
-		u.CategoryName = *req.CategoryName
-	}
-	if req.DivisionID != nil {
-		u.DivisionID = req.DivisionID
-	}
-	if req.DivisionName != nil {
-		u.DivisionName = *req.DivisionName
 	}
 	if req.Description != nil {
 		u.Description = *req.Description

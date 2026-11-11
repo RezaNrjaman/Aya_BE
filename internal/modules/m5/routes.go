@@ -1,6 +1,8 @@
 package m5
 
 import (
+	"time"
+
 	"araya-business-hub/be/internal/modules/m5/handler"
 	"araya-business-hub/be/internal/platform/middleware"
 	"araya-business-hub/be/internal/platform/rbac"
@@ -18,7 +20,6 @@ func registerPublicCatalogRoutes(rg *gin.RouterGroup, h Handlers) {
 	rg.GET("/business-units", h.Catalog.GetBusinessUnits)
 	rg.GET("/products", h.Catalog.GetProducts)
 	rg.GET("/catalog", h.Catalog.GetCatalog)
-	rg.POST("/service-requests", h.ServiceRequest.CreateRequest)
 }
 
 func registerPublicCartRoutes(rg *gin.RouterGroup, h Handlers) {
@@ -27,7 +28,6 @@ func registerPublicCartRoutes(rg *gin.RouterGroup, h Handlers) {
 	rg.PATCH("/cart/items/:product_id", h.Cart.UpdateItem)
 	rg.DELETE("/cart/items/:product_id", h.Cart.RemoveItem)
 	rg.DELETE("/cart", h.Cart.ClearCart)
-	rg.POST("/cart/checkout", h.Checkout.Checkout)
 }
 
 func registerProtectedAdminRoutes(rg *gin.RouterGroup, policy *rbac.PolicyService, h Handlers) {
@@ -40,9 +40,12 @@ func registerProtectedAdminRoutes(rg *gin.RouterGroup, policy *rbac.PolicyServic
 func RegisterRoutes(r *gin.Engine, jwtSecret string, policy *rbac.PolicyService, h Handlers) {
 	m5 := r.Group("/api/m5/v1")
 	registerPublicCatalogRoutes(m5, h)
+	limiter := middleware.NewRateLimiter()
+	m5.POST("/service-requests", middleware.RateLimit(limiter, 10, time.Minute), h.ServiceRequest.CreateRequest)
+	m5.POST("/cart/checkout", middleware.RateLimit(limiter, 10, time.Minute), h.Checkout.Checkout)
 	registerPublicCartRoutes(m5, h)
 
 	protected := m5.Group("")
-	protected.Use(middleware.Authenticate(jwtSecret))
+	protected.Use(middleware.Authenticate(jwtSecret), middleware.RequirePartnerTenant())
 	registerProtectedAdminRoutes(protected, policy, h)
 }

@@ -9,10 +9,11 @@ Backend resmi untuk Araya Business Hub Platform (M1–M5), dibangun menggunakan 
 - **Environment Validation**: Konfigurasi divalidasi saat startup sebelum server menerima traffic.
 - **Graceful Shutdown**: Server menangani sinyal `SIGINT` dan `SIGTERM` secara tertib dengan context timeout 10 detik.
 - **Database Connection Pool**: Terkonfigurasi untuk PostgreSQL / Supabase pooler dengan ping health check.
-- **Database Migrations**: Baseline skema M1–M5 di `./migrations/000001_init_schema.up.sql`.
+- **Database Migrations**: Baseline skema M1–M5 dan forward migrations di `./migrations/`. Untuk Supabase yang sudah berisi tabel baseline, ikuti `docs/SUPABASE_MIGRATIONS.md` dan jalankan migration 000003–000011 satu per satu; jangan jalankan ulang baseline.
+- **Workspace boundaries**: Super Admin hanya mengelola verifikasi/suspend Partner; setiap Partner mengelola organisasi dan transaksi tenant-nya sendiri. Lihat `docs/WORKSPACE_AND_MODULES.md`.
 
 ## Prasyarat
-- Go 1.22+ (teruji pada Go 1.26+)
+- Go 1.26.2 (sesuai deklarasi `go 1.26.2` pada `go.mod`)
 - Database PostgreSQL (lokal atau instans Supabase)
 
 ## Menjalankan Backend Lokal
@@ -26,7 +27,8 @@ Backend resmi untuk Araya Business Hub Platform (M1–M5), dibangun menggunakan 
    ```bash
    go run ./cmd/api
    ```
-4. Verifikasi endpoint health check:
+4. Untuk database yang sudah ada, jalankan forward migrations sesuai `docs/SUPABASE_MIGRATIONS.md` sebelum menjalankan backend. Migration 000010 wajib karena versi backend ini membaca `users.is_partner_suspended`. Migration 000011 menambahkan hierarki Unit Usaha → Kategori → Divisi → Role → Pengguna.
+5. Verifikasi endpoint health check:
    - Root probe: `http://localhost:8080/health`
    - Platform health envelope: `http://localhost:8080/api/v1/health`
 
@@ -34,3 +36,6 @@ Backend resmi untuk Araya Business Hub Platform (M1–M5), dibangun menggunakan 
 ```bash
 go test -v ./...
 ```
+
+
+M4/M5 checkout and product kind changes: apply `migrations/000012_product_type.up.sql` after reviewing the migration guide. Guest checkout now creates an order with an unpaid invoice; customers can track by order number + checkout email and pay using the sandbox flow.

@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"strings"
+
 	"araya-business-hub/be/internal/platform/audit"
+	"araya-business-hub/be/internal/platform/middleware"
 	"araya-business-hub/be/internal/platform/query"
 	"araya-business-hub/be/internal/platform/response"
 	"github.com/gin-gonic/gin"
@@ -21,7 +24,14 @@ func (h *AuditHandler) ListAuditLogs(c *gin.Context) {
 		response.HandleAppError(c, appErr)
 		return
 	}
-	records, total, err := h.auditSvc.List(c.Request.Context(), p.PerPage, p.Offset())
+	user := middleware.GetAuthUser(c)
+	var partnerID *int
+	restricted := false
+	if user != nil && !strings.EqualFold(user.Role, "admin") {
+		partnerID = user.PartnerID
+		restricted = true
+	}
+	records, total, err := h.auditSvc.ListScoped(c.Request.Context(), partnerID, restricted, p.PerPage, p.Offset())
 	if err != nil {
 		response.HandleAppError(c, response.InternalError(err))
 		return

@@ -22,6 +22,8 @@ func SeedPlatformPermissions(registry *Registry) error {
 		{Key: "m2.business_units.read", Module: "m2", Name: "Lihat Unit Usaha", Description: "Melihat profil dan daftar unit usaha", IsActive: true},
 		{Key: "m2.business_units.create", Module: "m2", Name: "Tambah Unit Usaha", Description: "Mendaftarkan unit usaha baru", IsActive: true},
 		{Key: "m2.business_units.update", Module: "m2", Name: "Ubah Unit Usaha", Description: "Memperbarui data dan status unit usaha", IsActive: true},
+		{Key: "m2.categories.read", Module: "m2", Name: "Lihat Kategori", Description: "Melihat kategori di dalam unit usaha", IsActive: true},
+		{Key: "m2.categories.manage", Module: "m2", Name: "Kelola Kategori", Description: "Membuat, mengubah, dan menonaktifkan kategori", IsActive: true},
 		{Key: "m2.divisions.read", Module: "m2", Name: "Lihat Divisi", Description: "Melihat daftar divisi milik tenant", IsActive: true},
 		{Key: "m2.divisions.manage", Module: "m2", Name: "Kelola Divisi", Description: "Membuat, mengubah, dan menonaktifkan divisi", IsActive: true},
 		{Key: "m2.dashboard.read", Module: "m2", Name: "Lihat Dashboard", Description: "Mengakses dashboard operasional dan ringkasan data", IsActive: true},
@@ -66,14 +68,9 @@ func SeedInitialRoles(ctx context.Context, repo Repository) error {
 				IsActive:    true,
 			},
 			Perms: []string{
-				"m1.users.read", "m1.users.create", "m1.users.update", "m1.users.delete",
-				"m1.roles.read", "m1.roles.manage", "m1.audit.read",
-				"m2.business_units.read", "m2.business_units.create", "m2.business_units.update",
-				"m2.divisions.read", "m2.divisions.manage", "m2.dashboard.read",
+				// Super Admin is a platform operator: it verifies and suspends
+				// partners, but does not operate a tenant's organization or transactions.
 				"m3.partners.read", "m3.partners.verify", "m3.partners.suspend",
-				"m4.products.read", "m4.products.manage", "m4.customers.manage",
-				"m4.quotations.manage", "m4.invoices.manage", "m4.invoices.pay", "m4.orders.manage",
-				"m5.catalog.read", "m5.services.request", "m5.services.manage", "m5.cart.manage", "m5.checkout.create",
 			},
 		},
 		{
@@ -96,15 +93,16 @@ func SeedInitialRoles(ctx context.Context, repo Repository) error {
 				IsActive:    true,
 			},
 			Perms: []string{
+				// Partner owner controls only the tenant's own organization.
 				"m1.users.read", "m1.users.create", "m1.users.update", "m1.users.delete",
+				"m1.roles.read", "m1.roles.manage", "m1.audit.read",
 				"m2.dashboard.read",
-				// ARY-005: partners manage their own business units.
 				"m2.business_units.read", "m2.business_units.create", "m2.business_units.update",
-				// ARY-006: partners manage their own divisions.
+				"m2.categories.read", "m2.categories.manage",
 				"m2.divisions.read", "m2.divisions.manage",
-				"m3.partners.read", "m3.partners.register",
 				"m4.products.read", "m4.products.manage", "m4.customers.manage",
 				"m4.quotations.manage", "m4.invoices.manage", "m4.orders.manage",
+				"m5.services.manage",
 			},
 		},
 		{

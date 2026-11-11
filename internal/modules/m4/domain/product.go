@@ -19,6 +19,7 @@ type Product struct {
 	UnitUsahaID int       `json:"unit_usaha_id"`
 	PartnerID   *int      `json:"partner_id,omitempty"`
 	Name        string    `json:"name"`
+	ProductType string    `json:"product_type"` // barang or jasa
 	Category    string    `json:"category,omitempty"`
 	Description string    `json:"description,omitempty"`
 	Price       int64     `json:"price"` // Integer Rupiah
@@ -40,7 +41,15 @@ func (p *Product) Validate() error {
 	if p.Price < 0 {
 		return ErrInvalidPrice
 	}
-	if p.Stock < 0 {
+	if p.ProductType == "" {
+		p.ProductType = "barang"
+	}
+	if p.ProductType != "barang" && p.ProductType != "jasa" {
+		return errors.New("jenis produk harus barang atau jasa")
+	}
+	if p.ProductType == "jasa" {
+		p.Stock = 0
+	} else if p.Stock < 0 {
 		return ErrInvalidStock
 	}
 	return nil
